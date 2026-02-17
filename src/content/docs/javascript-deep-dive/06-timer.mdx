@@ -1,0 +1,273 @@
+---
+title: "Timer, Throttle, Debounce, RAF"
+description: "setTimeout, setInterval부터 Debounce, Throttle, requestAnimationFrame까지 타이밍 제어 기법을 정리합니다."
+sidebar:
+  order: 6
+---
+
+웹 개발에서 타이밍을 제어하는 것은 매우 빈번한 작업입니다. 일정 시간 후 실행, 반복 실행, 과도한 이벤트 제어, 부드러운 애니메이션 등 다양한 상황에서 타이머 관련 API를 사용하게 됩니다.
+
+## setTimeout
+
+지정한 시간이 지난 후 함수를 한 번 실행합니다. 페이지 이동 지연이나 토스트 메시지 자동 제거 등에 활용됩니다.
+
+```javascript
+function movePage(location, delaySec) {
+  setTimeout(() => {
+    window.location.href = location;
+  }, delaySec * 1000);
+}
+
+login(userInput);
+movePage("/", 5);
+```
+
+### 토스트 메시지 구현
+
+```javascript
+function showNotification(message, duration) {
+  const notification = document.createElement("div");
+  notification.innerText = message;
+  notification.setAttribute("class", "notification");
+  document.body.append(notification);
+  setTimeout(() => {
+    notification.remove();
+  }, duration);
+}
+```
+
+## setInterval
+
+지정한 간격으로 함수를 반복 실행합니다. `clearInterval`로 중지할 수 있습니다.
+
+```javascript
+function counter(limit) {
+  let counter = 0;
+  const indicatorDiv = document.querySelector("#indicator");
+
+  if (!indicatorDiv) return;
+
+  indicatorDiv.innerText = counter;
+
+  const intervalId = setInterval(() => {
+    counter++;
+    indicatorDiv.innerText = counter;
+
+    if (counter === limit) {
+      clearInterval(intervalId);
+    }
+  }, 1000);
+}
+```
+
+## Debounce
+
+연속된 이벤트가 끝난 뒤 마지막 한 번만 실행하는 기법입니다. 대표적으로 검색창 자동완성에 사용합니다.
+
+### 문제 상황
+
+사용자가 타이핑할 때마다 API 요청이 발생합니다.
+
+```javascript
+const search = document.getElementById("search");
+search.addEventListener("input", async (e) => {
+  const q = e.target.value;
+  const res = await fetch(`url/search?q=${q}`);
+  const result = await res.json();
+  // 매 키 입력마다 요청 발생!
+});
+```
+
+### Debounce 구현
+
+클로저와 고차 함수를 활용하여 구현합니다.
+
+```javascript
+const debounce = (fn, duration) => {
+  let timerId;
+
+  return function (...args) {
+    if (timerId) clearTimeout(timerId);
+
+    timerId = setTimeout(() => {
+      fn(...args);
+    }, duration * 1000);
+  };
+};
+```
+
+### 적용
+
+```javascript
+search.addEventListener(
+  "input",
+  debounce(async (e) => {
+    const q = e.target.value;
+    try {
+      const res = await fetch(`url/search?q=${q}`);
+      const result = await res.json();
+      // 사용자가 타이핑을 멈춘 후에만 요청
+    } catch {
+      console.error("error occurred");
+    }
+  }, 1)
+);
+```
+
+### React에서의 Debounce
+
+```javascript
+export const debounce = (fn, delay) => {
+  let timerId;
+
+  return (...args) => {
+    if (timerId) {
+      clearTimeout(timerId);
+    }
+    timerId = setTimeout(() => fn(...args), delay);
+  };
+};
+```
+
+여기서 주의할 점: dependency 배열이 비어 있는 `useCallback`으로 감싸야 할까요?
+
+```javascript
+// 이 방법도 동작하지만...
+const someFunc = useCallback(func, []);
+
+// 상태나 props를 참조하지 않는다면 컴포넌트 바깥에 선언해도 됩니다.
+const someFunc = () => {
+  func();
+};
+```
+
+컴포넌트 외부에서 함수를 선언하면 렌더링 시마다 재생성되지 않으며, 상태나 props와 관계없이 한 번만 정의되어 재사용됩니다. `useCallback`은 내부에서 **상태값을 참조**해야 할 때, 즉 dependency에 상태를 추가해야 할 때 사용하는 것이 적합합니다.
+
+## Throttle
+
+지정한 시간 동안 최대 한 번만 이벤트를 실행하는 기법입니다. 주로 스크롤 이벤트에 사용합니다.
+
+### 기본 구현
+
+```javascript
+function throttling(fn, duration) {
+  let timerId;
+
+  return function (...args) {
+    if (timerId) return;
+    timerId = setTimeout(() => {
+      fn(...args);
+      timerId = null;
+    }, duration);
+  };
+}
+```
+
+### React에서의 Throttle
+
+마우스 위치 추적 훅에 throttle을 적용하는 예시입니다.
+
+```jsx
+// throttle 없이 - 모든 mousemove 이벤트 반응
+export const useMousePosition = () => {
+  const [position, setPosition] = useState({ x: 0, y: 0 });
+
+  useEffect(() => {
+    const onMouseEvent = (e) => {
+      const { clientX: x, clientY: y } = e;
+      setPosition({ x, y });
+    };
+
+    window.addEventListener("mousemove", onMouseEvent);
+    return () => window.removeEventListener("mousemove", onMouseEvent);
+  }, []);
+
+  return position;
+};
+```
+
+```javascript
+const throttle = (fn, wait) => {
+  let timerId;
+  let inThrottle;
+  let lastTime;
+
+  return (...args) => {
+    if (!inThrottle) {
+      lastTime = Date.now();
+      inThrottle = true;
+    } else {
+      clearTimeout(timerId);
+      timerId = setTimeout(() => {
+        if (Date.now() - lastTime >= wait) {
+          fn(...args);
+          lastTime = Date.now();
+        }
+      }, Math.max(wait - (Date.now() - lastTime), 0));
+    }
+  };
+};
+```
+
+```jsx
+// throttle 적용
+export const useMousePosition = ({ throttleTime = 300 }) => {
+  const [position, setPosition] = useState({ x: 0, y: 0 });
+
+  useEffect(() => {
+    const onMouseEvent = throttle((e) => {
+      const { clientX: x, clientY: y } = e;
+      setPosition({ x, y });
+    }, throttleTime);
+
+    window.addEventListener("mousemove", onMouseEvent);
+    return () => window.removeEventListener("mousemove", onMouseEvent);
+  }, []);
+
+  return position;
+};
+```
+
+## Debounce vs Throttle 비교
+
+| 항목 | Debounce | Throttle |
+|------|----------|----------|
+| 실행 시점 | 이벤트가 끝난 후 | 일정 간격마다 |
+| 대표 사용처 | 검색창 자동완성 | 스크롤 이벤트 |
+| 핵심 동작 | 타이머를 초기화 후 재설정 | 타이머가 있으면 무시 |
+
+## requestAnimationFrame (RAF)
+
+부드러운 애니메이션 구현에 최적화된 API입니다. 브라우저의 리페인팅 시점에 맞춰 콜백을 실행합니다.
+
+### setInterval과의 비교
+
+```javascript
+// setInterval: 고정 간격 (60 FPS ≈ 16ms)
+const boxInterval = document.querySelector("#boxInterval");
+let intervalAngle = 0;
+
+function animationWithInterval() {
+  boxInterval.style.transform = `rotate(${intervalAngle}deg)`;
+  intervalAngle += 2;
+}
+
+setInterval(animationWithInterval, 16);
+```
+
+### RAF 방식
+
+```javascript
+const box = document.querySelector("#box");
+let angle = 0;
+
+function animationWithRAF() {
+  box.style.transform = `rotate(${angle}deg)`;
+  angle += 2;
+  requestAnimationFrame(animationWithRAF);
+}
+
+requestAnimationFrame(animationWithRAF);
+```
+
+`setInterval`은 정확한 타이밍을 보장하지 않고 백그라운드 탭에서도 계속 실행되는 반면, `requestAnimationFrame`은 브라우저의 리페인팅 주기에 맞춰 실행되어 더 부드럽고 효율적입니다.

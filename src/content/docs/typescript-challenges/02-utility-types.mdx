@@ -1,0 +1,95 @@
+---
+title: "유틸리티 타입 직접 구현하기"
+description: "Conditional Type, infer, Mapped Type을 활용해 유틸리티 타입을 직접 구현하며 타입 시스템을 깊이 이해합니다."
+sidebar:
+  order: 2
+---
+
+TypeScript가 기본 제공하는 유틸리티 타입들은 편리하지만, 직접 구현해보면 타입 시스템의 동작 원리를 훨씬 깊이 이해할 수 있습니다. 조건부 타입, `infer`, Mapped Type을 조합하는 패턴을 정리합니다.
+
+## 타입 제거와 변환 (Conditional Type)
+
+유니온 타입에서 특정 멤버를 제거하거나 변환할 수 있습니다.
+
+```typescript
+type Letters = "a" | "b" | "c";
+
+// 제거: "c"를 never로 치환
+type RemoveC<T> = T extends "c" ? never : T;
+type TypeWithoutC = RemoveC<Letters>; // "a" | "b"
+
+// 변환: "c"를 "d"로 교체
+type ChangeC<T> = T extends "c" ? "d" : T;
+type TypeWithD = ChangeC<Letters>; // "a" | "b" | "d"
+```
+
+조건부 타입에서 `never`를 반환하면 해당 멤버가 유니온에서 제거됩니다.
+
+## 타입 레벨 유효성 검사 (DeepPartial 패턴)
+
+런타임이 아닌 타입 레벨에서 인자의 유효성을 검사하는 패턴입니다.
+
+```typescript
+// 문제: 배열이나 객체가 들어와도 타입 에러가 발생하지 않음
+export const deepEqualCompare = <Arg>(a: Arg, b: Arg): boolean => {
+  if (Array.isArray(a) || Array.isArray(b) || typeof a === "object" || typeof b === "object")
+    throw new Error("cannot use reference type");
+  return a === b;
+};
+
+deepEqualCompare([], []); // 런타임에서야 에러 발생
+```
+
+타입 레벨 검사를 추가하면 컴파일 타임에 잡을 수 있습니다.
+
+```typescript
+type CheckArgType<T> = T extends object ? "invalid" : T;
+
+export const deepEqualCompare = <Arg>(
+  a: CheckArgType<Arg>,
+  b: CheckArgType<Arg>
+): boolean => {
+  if (Array.isArray(a) || Array.isArray(b)) throw new Error("invalid");
+  return a === b;
+};
+
+deepEqualCompare([], []); // 컴파일 에러!
+```
+
+`extends`와 리터럴 타입을 조합해 타입 레벨에서 유효성을 검증하는 강력한 패턴입니다.
+
+## Remove Prefix: 키 리매핑
+
+API 응답의 키에서 접두사를 제거하는 타입을 만들 수 있습니다. `as` 절을 이용한 키 리매핑과 템플릿 리터럴 타입, `infer`를 조합합니다.
+
+```typescript
+interface ApiData {
+  "maps:longitude": string;
+  "maps:latitude": string;
+}
+
+type RemovePrefix<T> = T extends `maps:${infer U}` ? U : T;
+
+type RemovePrefixFromObj<T> = {
+  [K in keyof T as RemovePrefix<K>]: T[K];
+};
+
+type Data = RemovePrefixFromObj<ApiData>;
+// { longitude: string; latitude: string }
+```
+
+## Index Access Type
+
+인덱스 접근 타입에서 `number`를 사용하면 배열/튜플의 모든 요소 타입을 유니온으로 추출할 수 있습니다. TypeScript가 자동으로 순회하며 중복을 제거합니다.
+
+```typescript
+interface UserRoleConfig {
+  user: ["view", "create", "update"];
+  superAdmin: ["view", "create", "update", "delete"];
+}
+
+type Role = UserRoleConfig[keyof UserRoleConfig][number];
+// "view" | "create" | "update" | "delete"
+```
+
+`keyof`로 모든 키를 순회하고, `[number]`로 각 튜플의 요소를 유니온으로 펼친 결과입니다.

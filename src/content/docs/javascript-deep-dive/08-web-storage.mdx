@@ -1,0 +1,116 @@
+---
+title: "Web Storage: localStorage ~ IndexedDB"
+description: "브라우저 저장소의 종류와 특성 — localStorage, sessionStorage, IndexedDB를 비교 정리합니다."
+sidebar:
+  order: 8
+---
+
+브라우저에는 서버를 거치지 않고 데이터를 저장할 수 있는 여러 저장소가 있습니다. 용도와 생명주기에 따라 localStorage, sessionStorage, IndexedDB를 적절히 선택해야 합니다.
+
+## localStorage
+
+브라우저에 영구적으로 데이터를 저장합니다. 브라우저별로 보통 **5MB** 정도의 용량을 제공합니다.
+
+### 기본 API
+
+```javascript
+localStorage.setItem(key, value);
+localStorage.getItem(key);
+localStorage.removeItem(key);
+```
+
+### 주의사항
+
+- 값은 항상 **문자열**로 저장됩니다. 객체나 배열을 저장하려면 `JSON.stringify`/`JSON.parse`를 사용해야 합니다.
+- **민감한 정보는 저장하면 안 됩니다.** 누구나 DevTools로 접근 가능합니다.
+- 다크 모드 설정 저장 등에 주로 활용됩니다. React에서는 Context API와 연동하는 패턴이 일반적입니다.
+
+### 멀티 탭 동기화
+
+같은 페이지를 여러 탭으로 열었을 때, 한 탭에서 localStorage를 변경하면 다른 탭에서도 반영해야 하는 경우가 있습니다. `storage` 이벤트를 활용합니다.
+
+```javascript
+function applySavedTheme() {
+  const savedTheme = localStorage.getItem("theme");
+  if (savedTheme === "dark") {
+    document.body.classList.add("dark-mode");
+    toggleButton.textContent = "Light Mode";
+    return;
+  }
+
+  document.body.classList.remove("dark-mode");
+  toggleButton.textContent = "Dark Mode";
+}
+
+window.addEventListener("storage", (e) => {
+  if (e.key === "theme") {
+    applySavedTheme();
+  }
+});
+```
+
+`storage` 이벤트는 **같은 출처의 다른 탭**에서 변경이 발생했을 때만 트리거됩니다.
+
+## sessionStorage
+
+localStorage와 API는 거의 동일하지만 생명주기가 다릅니다.
+
+- 새 탭이나 새 창에서는 **공유되지 않습니다.**
+- 탭을 닫으면 데이터가 **초기화**됩니다.
+- 검색 내역, 광고 모달 표시 여부 등 **세션 단위**로 관리할 데이터에 적합합니다.
+
+```javascript
+const openAdModal = () => {
+  if (Boolean(sessionStorage.getItem("shownWarning"))) return;
+
+  Modal.open();
+  sessionStorage.setItem("shownWarning", true);
+};
+
+openAdModal();
+```
+
+새로고침 후에도 데이터가 유지되지만, 탭을 닫으면 사라지므로 요구사항이 명확해야 합니다.
+
+## IndexedDB
+
+localStorage보다 훨씬 **큰 용량**을 저장할 수 있는 브라우저 내장 데이터베이스입니다. 비동기 API 기반이며, 트랜잭션 단위로 동작합니다.
+
+```javascript
+const open = indexedDB.open("IndexedDB", 1); // 두 번째 인자는 버전
+
+open.onupgradeneeded = () => {
+  const db = open.result;
+  db.createObjectStore("MyUserStore", { keyPath: "id" });
+};
+
+open.onsuccess = () => {
+  console.log("opened");
+  const db = open.result;
+  const transaction = db.transaction("MyUserStore", "readwrite");
+  const store = transaction.objectStore("MyUserStore");
+
+  store.put({ id: 1, username: "sojeong", age: 28 });
+
+  const user1 = store.get(1);
+  user1.onsuccess = () => {
+    console.log(user1.result);
+  };
+};
+
+open.onerror = () => {
+  console.log("error occurred");
+};
+```
+
+콜백 기반 API라 사용법이 다소 복잡합니다. 실무에서는 [idb](https://github.com/jakearchibald/idb) 같은 래퍼 라이브러리를 사용하는 경우가 많습니다.
+
+## 비교 정리
+
+| 항목 | localStorage | sessionStorage | IndexedDB |
+|------|-------------|----------------|-----------|
+| 용량 | ~5MB | ~5MB | 수백 MB 이상 |
+| 생명주기 | 영구 | 탭/세션 단위 | 영구 |
+| API | 동기 | 동기 | 비동기 |
+| 데이터 형식 | 문자열 | 문자열 | 구조화된 객체 |
+| 사용처 | 설정, 테마 | 임시 상태 | 대용량 캐시, 오프라인 |

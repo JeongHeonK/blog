@@ -6,36 +6,36 @@
 		'Fira Code', Menlo, monospace;
 }
 
-/* === Light Mode Colors === */
+/* === Light Mode Colors (from Stitch design) === */
 :root {
-	--sl-color-accent-low: #e8f0fe;
-	--sl-color-accent: #3b82f6;
-	--sl-color-accent-high: #1e40af;
+	--sl-color-accent-low: #dbeafe;
+	--sl-color-accent: #137fec;
+	--sl-color-accent-high: #0f5bb5;
 
-	--sl-color-white: #fafaf9;
-	--sl-color-gray-1: #f5f5f4;
-	--sl-color-gray-2: #e7e5e4;
-	--sl-color-gray-3: #a8a29e;
-	--sl-color-gray-4: #57534e;
-	--sl-color-gray-5: #292524;
-	--sl-color-gray-6: #1c1917;
-	--sl-color-black: #0c0a09;
+	--sl-color-white: #ffffff;
+	--sl-color-gray-1: #f8fafc;
+	--sl-color-gray-2: #e2e8f0;
+	--sl-color-gray-3: #94a3b8;
+	--sl-color-gray-4: #64748b;
+	--sl-color-gray-5: #1e293b;
+	--sl-color-gray-6: #0f172a;
+	--sl-color-black: #020617;
 }
 
-/* === Dark Mode Colors === */
+/* === Dark Mode Colors (from Stitch design) === */
 :root[data-theme='dark'] {
-	--sl-color-accent-low: #1e2a3a;
-	--sl-color-accent: #60a5fa;
-	--sl-color-accent-high: #bfdbfe;
+	--sl-color-accent-low: #1a2a3e;
+	--sl-color-accent: #137fec;
+	--sl-color-accent-high: #93c5fd;
 
-	--sl-color-white: #1a1a1e;
-	--sl-color-gray-1: #23232a;
-	--sl-color-gray-2: #2e2e36;
-	--sl-color-gray-3: #6b7280;
-	--sl-color-gray-4: #9ca3af;
-	--sl-color-gray-5: #d1d5db;
-	--sl-color-gray-6: #f3f4f6;
-	--sl-color-black: #f9fafb;
+	--sl-color-white: #101922;
+	--sl-color-gray-1: #111a22;
+	--sl-color-gray-2: #233648;
+	--sl-color-gray-3: #546b82;
+	--sl-color-gray-4: #92adc9;
+	--sl-color-gray-5: #cbd5e1;
+	--sl-color-gray-6: #e2e8f0;
+	--sl-color-black: #f8fafc;
 }
 
 /* === Typography === */
@@ -78,9 +78,58 @@ body {
 	font-size: 0.9em;
 }
 
-/* === Sidebar === */
+/* === Sidebar Styling === */
 nav.sidebar .top-level > li > details > summary {
 	font-weight: 600;
+}
+
+/* Sidebar active item left border */
+nav.sidebar a[aria-current='page'] {
+	border-inline-start: 3px solid var(--sl-color-accent);
+	padding-inline-start: 0.75rem;
+	font-weight: 700;
+}
+
+/* === Inline Code in Light Mode === */
+:root .sl-markdown-content :not(pre) > code {
+	background-color: #f1f5f9;
+	color: #db2777;
+	border: 1px solid #e2e8f0;
+}
+
+/* === Inline Code in Dark Mode === */
+:root[data-theme='dark'] .sl-markdown-content :not(pre) > code {
+	background-color: #233648;
+	color: #f0abfc;
+	border: 1px solid #334155;
+}
+
+/* === Callout / Aside Styling === */
+.starlight-aside {
+	border-radius: 0 0.5rem 0.5rem 0;
+}
+
+/* === Header === */
+header.header {
+	backdrop-filter: blur(12px);
+}
+
+/* === Scrollbar (Dark Mode) === */
+:root[data-theme='dark'] ::-webkit-scrollbar {
+	width: 6px;
+}
+
+:root[data-theme='dark'] ::-webkit-scrollbar-track {
+	background: #101922;
+}
+
+:root[data-theme='dark'] ::-webkit-scrollbar-thumb {
+	background: #233648;
+	border-radius: 4px;
+}
+
+:root[data-theme='dark'] ::-webkit-scrollbar-thumb:hover {
+	background: #344c64;
 }
 
 /* === Mobile === */

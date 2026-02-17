@@ -1,0 +1,309 @@
+---
+title: "비동기: Callback에서 Async/Await까지"
+description: "JavaScript 비동기 처리의 진화 과정을 Callback, Promise, Async/Await 순서로 정리합니다."
+sidebar:
+  order: 5
+---
+
+JavaScript는 싱글 스레드 언어입니다. 오래 걸리는 작업이 메인 스레드를 점유하면 브라우저 전체가 멈춰버리기 때문에, 비동기 처리는 선택이 아니라 필수입니다. Callback에서 시작해 Promise, 그리고 Async/Await까지 비동기 패턴의 진화 과정을 따라가봅니다.
+
+## Callback
+
+특정 함수의 실행이 끝난 뒤 다음 함수를 실행하는 패턴입니다. 함수의 실행 시점을 호출자가 명시적으로 제어할 수 있습니다.
+
+```javascript
+makeRequest("api/user/:id", (id) => {
+  isLogin(id);
+});
+```
+
+### 비동기의 기본 원리
+
+JavaScript는 싱글 스레드이므로 오래 걸리는 작업을 만나면 해당 작업을 뒤로 보내고(큐), 동기적인 작업부터 먼저 처리합니다.
+
+```javascript
+let result;
+
+const p = new Promise(() => {
+  result = 1;
+});
+
+console.log(result); // undefined
+```
+
+참고로 Promise **객체의 생성 자체**는 동기적으로 발생합니다.
+
+```javascript
+const result = new Promise((res, rej) => {});
+console.log(result); // Promise 객체가 리턴됨
+```
+
+### Callback Hell
+
+콜백 패턴을 사용하면 비동기 작업이 연속될 때 중첩이 깊어지는 이른바 "콜백 헬"을 피하기 어렵습니다.
+
+```javascript
+fs.readFile("file1.txt", "utf8", function (err, data) {
+  if (err) {
+    console.error(err);
+  } else {
+    fs.readFile("file2.txt", "utf8", function (err, data) {
+      if (err) {
+        console.error(err);
+      } else {
+        fs.readFile("file3.txt", "utf8", function (err, data) {
+          if (err) {
+            console.error(err);
+          } else {
+            // ...점점 깊어지는 중첩
+          }
+        });
+      }
+    });
+  }
+});
+```
+
+이 문제를 해결하기 위해 Promise가 등장했습니다.
+
+## Promise
+
+비동기 코드를 보다 깔끔하게 처리할 수 있는 객체입니다. `pending`, `fulfilled`, `rejected` 세 가지 상태를 가집니다.
+
+```javascript
+fetch(url); // Promise 반환
+```
+
+### then과 catch
+
+```javascript
+fetch(url)
+  .then(() => {})
+  .then(() => {})
+  .then(() => {})
+  .catch(() => {});
+```
+
+- `then`은 성공한 경우 실행됩니다.
+- 여러 `then` 중 하나라도 에러가 발생하면 `catch`로 넘어갑니다.
+- 그래서 `catch`는 보통 체인 최하단에, 그 아래에 `finally`를 배치합니다.
+
+### Promise Chaining의 함정
+
+아래처럼 `then` 안에서 다시 `then`을 중첩하면 콜백 헬과 다를 바 없습니다.
+
+```javascript
+fetch(url)
+  .then((r) => {
+    fetch(url2)
+      .then((r2) => {
+        fetch(url3)
+          .then((r3) => {
+            fetch(url4).then(r4).catch((e) => console.error(e));
+          })
+          .catch((e) => console.error(e));
+      })
+      .catch((e) => console.error(e));
+  })
+  .catch((e) => console.error(e));
+```
+
+### 올바른 체이닝: Promise 객체 반환
+
+`then`에서 Promise 객체를 `return`하면 다음 `then`에서 이어받을 수 있습니다. 이것이 평탄화의 핵심입니다.
+
+```javascript
+fetch(url)
+  .then((r) => {
+    return fetch(url2);
+  })
+  .then((r2) => {
+    return fetch(url3);
+  })
+  .then((r3) => {
+    return fetch(url4);
+  })
+  .catch((e) => console.error(e));
+```
+
+어떤 `then`에서 에러가 발생하든 마지막 `catch`로 이동하므로, `catch` 한 번만 사용해도 충분합니다.
+
+## Promise 정적 메서드
+
+### Promise.all()
+
+모든 Promise가 성공해야 결과를 받을 수 있습니다. 하나라도 `rejected`되면 전체가 실패합니다.
+
+```javascript
+Promise.all(fetchArr)
+  .then((r) => console.log(r))
+  .catch((e) => console.log(e));
+```
+
+`async/await`과 함께 사용할 수도 있습니다.
+
+```javascript
+async function getFetches() {
+  try {
+    const result = await Promise.all(fetchArr);
+    console.log(result);
+  } catch (e) {
+    console.log(e);
+  }
+}
+```
+
+### Promise.allSettled()
+
+`all`과 달리 모든 Promise의 **결과**(성공이든 실패든)가 나오면 완료됩니다.
+
+```javascript
+async function allSettled() {
+  const results = await Promise.allSettled(fetchArr);
+
+  const fulfilled = results.filter((res) => res.status === "fulfilled");
+  const rejected = results.filter((res) => res.status === "rejected");
+
+  return [fulfilled, rejected];
+}
+```
+
+### Promise.race()
+
+가장 빠른 응답 하나를 반환합니다. 중요한 건 성공 여부가 아니라 **응답 여부**입니다. `fulfilled`든 `rejected`든 가장 먼저 settled된 Promise의 결과를 돌려줍니다.
+
+## Promisify
+
+기존 콜백 기반 API를 Promise로 감싸는 패턴입니다. 대표적인 예로 `setTimeout`을 Promise로 변환할 수 있습니다.
+
+```javascript
+function wait(delay) {
+  return new Promise((resolve) => {
+    setTimeout(() => resolve(), delay);
+  });
+}
+
+async function demo() {
+  console.log("hi");
+  await wait(1000);
+  console.log("there");
+}
+```
+
+### 실전: 콜백 헬을 Promisify로 해결하기
+
+콜백 헬 상태의 `fs.readFile`을 Promisify하면 다음과 같이 깔끔해집니다.
+
+```javascript
+import fs from "fs";
+
+function readFile(dir) {
+  return new Promise((resolve, reject) => {
+    fs.readFile(dir, "utf-8", (err, data) => {
+      if (err) {
+        reject(err);
+      } else {
+        resolve(data);
+      }
+    });
+  });
+}
+
+async function getFiles() {
+  try {
+    const result1 = await readFile("./passage1.txt");
+    console.log(result1);
+    const result2 = await readFile("./passage2.txt");
+    console.log(result2);
+    const result3 = await readFile("./passage3.txt");
+    console.log(result3);
+  } catch (error) {
+    console.log(error.message);
+  }
+}
+
+getFiles();
+```
+
+## 비동기 패턴: 병렬 vs 순차
+
+### 병렬 비동기 (Parallel)
+
+여러 요청을 동시에 보내고 싶을 때 사용합니다.
+
+```javascript
+// Promise 방식
+const result = [];
+
+fetch("/1").then((r) => result.push(r));
+fetch("/2").then((r) => result.push(r));
+fetch("/3").then((r) => result.push(r));
+```
+
+```javascript
+// async/await 방식
+const result = [];
+
+async function getData(num) {
+  const response = await fetch(`/${num}`);
+  result.push(response);
+}
+
+getData(1);
+getData(2);
+getData(3);
+```
+
+### 순차 비동기 (Sequential)
+
+순서가 보장되어야 할 때는 `then` 체이닝이나 `await`을 순서대로 사용합니다.
+
+## Async/Await
+
+`await`는 Promise의 실행을 기다리는 일시 정지 역할을 합니다. 모든 코드의 실행을 막는 것이 아니라, 비동기 코드 내에서 동기 코드처럼 읽히게 해줍니다.
+
+```javascript
+const url = "someUrl";
+
+// Promise 체이닝
+fetch(url)
+  .then((r) => {
+    return fetch(`${url}/${r}`);
+  })
+  .then((r) => console.log(r));
+
+// async/await으로 같은 동작
+const sameFunc = async (url) => {
+  const result = await fetch(url);
+  const result2 = await fetch(`${url}/${result}`);
+  console.log(result2);
+};
+```
+
+### await를 빼먹으면?
+
+`await` 없이 `fetch`를 호출하면 Promise가 resolve되기 전에 다음 줄이 실행됩니다.
+
+```javascript
+const sameFunc = async (url) => {
+  const result = fetch(url);
+  const result2 = fetch(`${url}/${result}`);
+  console.log(result2); // Promise<pending>
+};
+```
+
+### 에러 처리: try...catch
+
+```javascript
+const sameFunc = async (url) => {
+  try {
+    const result = await fetch(url);
+    const result2 = await fetch(`${url}/${result}`);
+    console.log(result2);
+  } catch (e) {
+    console.log(e);
+  }
+};
+```
+
+`try...catch`를 사용하면 동기 코드와 동일한 방식으로 에러를 처리할 수 있어 가독성이 크게 향상됩니다.

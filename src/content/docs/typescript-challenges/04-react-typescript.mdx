@@ -1,0 +1,87 @@
+---
+title: "React + TypeScript 실전 패턴"
+description: "React 컴포넌트의 Props 추출, 검색 파라미터 디코딩 등 React에서 TypeScript를 활용하는 실전 패턴을 정리합니다."
+sidebar:
+  order: 4
+---
+
+React와 TypeScript를 함께 사용할 때 알아두면 유용한 타입 패턴을 정리합니다. 컴포넌트 Props 추출부터 URL 검색 파라미터의 타입 안전한 디코딩까지 다룹니다.
+
+## React Props 타입 추출
+
+조건부 타입과 `infer`를 사용해 컴포넌트에서 Props 타입을 추출할 수 있습니다.
+
+```tsx
+const MyComponent = (props: { enabled: boolean }) => {
+  return null;
+};
+
+type PropsFrom<TComponent> = TComponent extends React.FC<infer Props>
+  ? Props
+  : never;
+
+type Props = PropsFrom<typeof MyComponent>;
+// { enabled: boolean }
+```
+
+실무에서는 Props를 인라인으로 정의하기보다 별도 인터페이스로 분리하는 경우가 대부분이라 직접 사용할 일은 적습니다. 하지만 서드파티 라이브러리의 컴포넌트 Props를 추출해야 할 때 유용합니다.
+
+### 함수 매개변수 추출로 일반화
+
+함수의 인자 타입을 추출하는 패턴으로 일반화할 수도 있습니다.
+
+```typescript
+type PropsFrom<TComponent> = TComponent extends (...args: infer Props) => void
+  ? Props
+  : never;
+```
+
+참고로 TypeScript에는 이미 `Parameters<T>` 유틸리티 타입이 내장되어 있어 같은 역할을 합니다.
+
+## 검색 파라미터 디코딩 (ts-toolbelt)
+
+[ts-toolbelt](https://github.com/millsp/ts-toolbelt) 라이브러리를 사용하면 JavaScript의 Lodash처럼 타입 레벨에서 다양한 연산을 수행할 수 있습니다.
+
+URL 쿼리 스트링을 타입 레벨에서 파싱하는 예시입니다.
+
+```typescript
+import { String, Union } from "ts-toolbelt";
+
+const query = "/home?a=wonderful&b=wow";
+
+type Query = typeof query;
+
+type SecondQueryPart = String.Split<Query, "?">[1];
+
+type QueryElements = String.Split<SecondQueryPart, "&">;
+
+type QueryParams = {
+  [QueryElement in QueryElements[number]]: {
+    [Key in String.Split<QueryElement, "=">[0]]: String.Split<
+      QueryElement,
+      "="
+    >[1];
+  };
+}[QueryElements[number]];
+
+type Result = Union.Merge<QueryParams>;
+// { a: "wonderful"; b: "wow" }
+```
+
+### 핵심 동작 원리
+
+1. `String.Split`으로 문자열을 `?`, `&`, `=` 기준으로 분리합니다.
+2. Mapped Type에서 키를 사용해 순회하면 자동으로 유니온 타입이 생성됩니다.
+3. `Union.Merge`로 유니온을 하나의 교차 타입으로 합칩니다.
+
+```typescript
+// 중간 단계
+type QueryParams = {
+  "a=wonderful": { a: "wonderful" };
+  "b=wow": { b: "wow" };
+}[QueryElements[number]];
+// → { a: "wonderful" } | { b: "wow" }
+// → Union.Merge → { a: "wonderful"; b: "wow" }
+```
+
+이 패턴은 URL 기반 라우팅에서 타입 안전성을 확보할 때 활용할 수 있습니다.
