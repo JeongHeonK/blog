@@ -14,7 +14,7 @@ npm run preview    # 빌드 결과 미리보기
 
 ## Architecture
 
-Astro + Starlight 기반 정적 기술 블로그. GitHub Pages에 배포 (`main` push 시 자동).
+Astro + Starlight 기반 정적 기술 블로그. GitHub Pages에 배포 (`main` 브랜치로 PR merge 시 자동).
 
 - **base path**: `/blog` — 모든 내부 링크에 `/blog/` 접두사 필요
 - **locale**: 한국어 단일 로케일 (`root`)
