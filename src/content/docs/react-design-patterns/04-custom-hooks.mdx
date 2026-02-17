@@ -1,0 +1,196 @@
+---
+title: "Custom Hooks로 로직 재사용하기"
+description: "Custom Hook을 통해 데이터 페칭 로직을 단계적으로 추상화하고, Hook 분리 시 주의할 점을 알아봅니다."
+sidebar:
+  order: 4
+---
+
+Custom Hook은 React의 내장 Hook들을 조합하여 만든 재사용 가능한 로직 단위입니다. 캡슐화를 통해 여러 컴포넌트에서 같은 로직을 공유할 수 있으며, 접두사 `use`를 사용하여 Hook임을 명시합니다.
+
+## useUser: 기본 데이터 페칭 Hook
+
+```tsx
+import axios from "axios";
+import { useEffect, useState } from "react";
+
+export const useUser = () => {
+  const [user, setUser] = useState({});
+
+  useEffect(() => {
+    (async () => {
+      const response = await axios.get("userURL");
+      setUser(response?.data);
+    })();
+  }, []);
+
+  return user;
+};
+```
+
+사용 시 import해서 바로 호출하면 됩니다.
+
+```tsx
+export const UserInfo = () => {
+  const user = useUser();
+  const { name, age, country, books } = user || {};
+
+  return user ? (
+    <>
+      <h2>{name}</h2>
+      <p>Age: {age} years</p>
+      <p>Country: {country}</p>
+    </>
+  ) : (
+    <h1>Loading...</h1>
+  );
+};
+```
+
+HOC에 비해 훨씬 간편합니다. prop으로 전달받을 필요 없이 필요한 컴포넌트에서 직접 사용할 수 있기 때문입니다.
+
+## useUsers: 인자를 받는 Hook
+
+특정 userId에 해당하는 사용자 정보를 가져오는 Hook입니다.
+
+```tsx
+export const useUsers = (userId: string) => {
+  const [user, setUser] = useState({});
+
+  useEffect(() => {
+    (async () => {
+      const response = await axios.get(`users/${userId}`);
+      setUser(response?.data);
+    })();
+  }, [userId]);
+
+  return user;
+};
+```
+
+userId를 부모에서 관리할지, 컴포넌트 내부에서 직접 관리할지는 상황에 따라 결정합니다. 여러 유저를 표시해야 한다면 부모에서 제어하는 것이 효과적입니다.
+
+```tsx
+const Parent = () => (
+  <>
+    <UserInfo userId={"1"} />
+    <UserInfo userId={"2"} />
+    <UserInfo userId={"3"} />
+  </>
+);
+```
+
+## useDataSource: 범용 데이터 소스 Hook
+
+데이터 소스를 함수로 받아 어떤 종류의 데이터든 가져올 수 있습니다.
+
+```tsx
+export const useDataSource = (getData: (...args: any[]) => Promise<any>) => {
+  const [resource, setResource] = useState({});
+
+  useEffect(() => {
+    (async () => {
+      const data = await getData();
+      setResource(data?.data);
+    })();
+  }, [getData]);
+
+  return resource;
+};
+```
+
+사용 시 주의할 점이 있습니다. 함수는 일급 객체이므로 매번 재생성되면 `useEffect`가 리렌더링을 유발합니다. 따라서 `useCallback`으로 감싸야 합니다.
+
+```tsx
+const fetchFromServer = (resourceUrl: string) => async () => {
+  const res = await axios.get(resourceUrl);
+  return res?.data;
+};
+
+export const UserInfo = ({ userId }: { userId: string }) => {
+  const fetchUser = useCallback(fetchFromServer(`/user/${userId}`), [userId]);
+  const user = useDataSource(fetchUser);
+
+  return user ? (
+    <>
+      <h2>{user.name}</h2>
+      <p>Age: {user.age} years</p>
+    </>
+  ) : (
+    <h1>Loading...</h1>
+  );
+};
+```
+
+## useResource: URL 기반 간단 Hook
+
+URL만 전달하면 데이터를 가져오는 가장 간결한 형태의 Hook입니다.
+
+```tsx
+export const useResource = (resourceUrl: string) => {
+  const [resource, setResource] = useState({});
+
+  useEffect(() => {
+    (async () => {
+      const response = await axios.get(resourceUrl);
+      setResource(response?.data);
+    })();
+  }, [resourceUrl]);
+
+  return resource;
+};
+```
+
+```tsx
+export const UserInfo = ({ userId }: { userId: string }) => {
+  const user = useResource(`users/${userId}`);
+  // ...
+};
+```
+
+HOC보다 훨씬 간편하고, 협업 관점에서도 이해하기 쉽습니다.
+
+## Hook 분리 시 주의할 점
+
+Custom Hook을 많이 만들고 분리한다고 해서 무조건 좋은 것은 아닙니다. 핵심은 **리렌더링의 영향 범위**입니다.
+
+```tsx
+export const useToggleDialog = () => {
+  const [show, setShow] = useState(false);
+  const [count, setCount] = useState(0);
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setCount((prev) => prev + 1);
+    }, 1000);
+    return () => clearInterval(timer);
+  });
+
+  return {
+    isShow: show,
+    show: () => setShow(true),
+    hide: () => setShow(false),
+  };
+};
+```
+
+이 Hook을 사용하는 컴포넌트는 `count` 상태가 매초 변하기 때문에 return하는 JSX 전체가 리렌더링됩니다. Hook을 별도로 분리하더라도 리렌더링을 일으키는 state를 포함하기 때문에 성능 문제는 해결되지 않습니다.
+
+해결책은 **컴포넌트 분리**입니다. 리렌더링을 유발하는 부분과 그렇지 않은 부분을 별도 컴포넌트로 나누면 리렌더링 범위를 줄일 수 있습니다.
+
+Custom Hook을 분리할 때는 항상 다음을 고려해야 합니다:
+- 이 Hook이 얼마나 많은 리렌더링을 유발하는가?
+- 관련 없는 렌더링 노드들을 어떻게 분리할 것인가?
+- Hook 분리와 컴포넌트 분리를 종합적으로 판단해야 한다
+
+## Custom Hook과 상태 공유
+
+Custom Hook은 상태를 공유하지 않습니다. 같은 Hook을 여러 컴포넌트에서 호출하면 각각 독립된 상태를 가집니다. 자식 컴포넌트 간에 상태를 공유해야 한다면 props로 전달하거나 전역 상태 라이브러리를 사용해야 합니다.
+
+zustand 같은 라이브러리는 selector 함수를 통해 사용하는 값만 구독하고, 해당 값이 변하지 않으면 리렌더링을 하지 않도록 최적화되어 있습니다.
+
+```tsx
+const a = useSelector((state) => state.a);
+// a가 변하지 않았다면 리렌더링하지 않음
+```
+
+어떤 state를 사용하는지 사용자가 명시하므로 **수동 최적화**라고 부릅니다.

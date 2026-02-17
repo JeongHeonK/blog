@@ -1,0 +1,406 @@
+---
+title: "생성 패턴"
+description: "Factory, Abstract Factory, Builder, Singleton, Prototype - GoF 생성 패턴 5가지를 TypeScript로 구현합니다."
+sidebar:
+  order: 3
+---
+
+생성 패턴은 객체를 생성하는 과정을 추상화하여 유연성과 재사용성을 높이는 패턴입니다. 이 글에서는 GoF의 5가지 생성 패턴을 살펴봅니다.
+
+## Factory Pattern
+
+클래스를 **런타임에서 결정**해야 할 때 사용하는 패턴입니다.
+
+```typescript
+abstract class Car {
+  constructor(public model: string, public productionYear: number) {}
+  abstract displayCarInfo(): void;
+}
+
+class Sedan extends Car {
+  displayCarInfo(): void {
+    console.log(`Sedan, model: ${this.model}, year: ${this.productionYear}`);
+  }
+}
+
+class SUV extends Car {
+  displayCarInfo(): void {
+    console.log(`SUV, model: ${this.model}, year: ${this.productionYear}`);
+  }
+}
+
+class Hatchback extends Car {
+  displayCarInfo(): void {
+    console.log(`Hatchback, model: ${this.model}, year: ${this.productionYear}`);
+  }
+}
+
+class CarFactory {
+  public createCar(
+    type: "sedan" | "suv" | "hatchback",
+    model: string,
+    productionYear: number
+  ): Car {
+    switch (type) {
+      case "sedan":
+        return new Sedan(model, productionYear);
+      case "suv":
+        return new SUV(model, productionYear);
+      case "hatchback":
+        return new Hatchback(model, productionYear);
+      default:
+        throw new Error("Invalid car type");
+    }
+  }
+}
+
+const carFactory = new CarFactory();
+const sedan = carFactory.createCar("sedan", "멋진차", 2024);
+```
+
+### 실전 활용: Header Factory
+
+JWT 토큰 관리 시 헤더를 매번 직접 작성하는 대신:
+
+```typescript
+class HeaderFactory {
+  static createHeaders(authToken: string): Record<string, string> {
+    return {
+      Authorization: `Bearer ${authToken}`,
+      "Content-Type": "application/json",
+    };
+  }
+}
+
+const headers = HeaderFactory.createHeaders("my-token");
+const response = await fetch(url, { headers });
+```
+
+### 장단점
+
+**장점**: 클래스 간 의존성 감소, 새 클래스 추가 시 switch문에 추가만 하면 됨
+
+**단점**: Factory 클래스를 항상 생성해야 함, 반환 타입이 union type이라 불분명, 생성 타입이 많아질수록 복잡해짐
+
+## Abstract Factory Pattern
+
+관련되거나 의존적인 객체들의 **그룹**을 구체적인 클래스 지정 없이 생성하는 패턴입니다.
+
+```typescript
+interface Button {
+  render(): void;
+  onClick(f: Function): void;
+}
+
+interface Checkbox {
+  render(): void;
+  toggle(): void;
+}
+
+interface GUIFactory {
+  createButton(): Button;
+  createCheckbox(button: Button): Checkbox;
+}
+
+// Windows 구현
+class WindowButton implements Button {
+  render(): void { console.log("Render a button in Windows Style"); }
+  onClick(f: Function): void {
+    console.log("Windows button was clicked");
+    f();
+  }
+}
+
+class WindowCheckbox implements Checkbox {
+  constructor(private button: Button) {}
+  render(): void { console.log("Render a checkbox in Windows Style"); }
+  toggle(): void {
+    this.button.onClick(() => console.log("Windows checkbox toggled"));
+  }
+}
+
+// macOS 구현
+class MacOSButton implements Button {
+  render(): void { console.log("Render a button in macOS Style"); }
+  onClick(f: Function): void {
+    console.log("macOS button was clicked");
+    f();
+  }
+}
+
+class MacOSCheckbox implements Checkbox {
+  constructor(private button: Button) {}
+  render(): void { console.log("Render a checkbox in macOS Style"); }
+  toggle(): void {
+    this.button.onClick(() => console.log("macOS checkbox toggled"));
+  }
+}
+
+// Factory 클래스
+class WindowFactory implements GUIFactory {
+  createButton(): Button { return new WindowButton(); }
+  createCheckbox(button: Button): Checkbox { return new WindowCheckbox(button); }
+}
+
+class MacOSFactory implements GUIFactory {
+  createButton(): Button { return new MacOSButton(); }
+  createCheckbox(button: Button): Checkbox { return new MacOSCheckbox(button); }
+}
+
+// 클라이언트 코드 - Factory만 교체하면 전체 UI가 변경됨
+function renderUI(factory: GUIFactory) {
+  const button = factory.createButton();
+  const checkbox = factory.createCheckbox(button);
+  button.render();
+  checkbox.render();
+}
+
+renderUI(new WindowFactory());
+renderUI(new MacOSFactory());
+```
+
+### 사용 시나리오
+
+- **UI 테마 설정**: 다크/라이트 모드에서 다른 스타일의 컴포넌트 생성
+- **플랫폼 독립적 개발**: Windows와 macOS에서 각각 다른 UI 제공
+- **데이터베이스 드라이버 선택**: MySQL, PostgreSQL 등에 따라 다른 연결 객체 생성
+
+### 장단점
+
+**장점**: 일관성 있는 구조, 구체적인 클래스를 직접 사용하지 않아 유연성 증가, SRP/OCP 준수
+
+**단점**: 보일러플레이트가 많음, 상위 인터페이스 변경 시 모든 하위 클래스 수정 필요
+
+## Builder Pattern
+
+복잡한 객체를 **단계별로** 생성하는 패턴입니다.
+
+```typescript
+interface Builder {
+  setPartA(): void;
+  setPartB(): void;
+  setPartC(): void;
+}
+
+class Product {
+  private parts: string[] = [];
+  public add(part: string): void { this.parts.push(part); }
+  public listParts(): void {
+    console.log(`Product Parts: ${this.parts.join(", ")}`);
+  }
+}
+
+class ConcreteBuilder implements Builder {
+  private product!: Product;
+
+  constructor() { this.reset(); }
+
+  public reset(): void { this.product = new Product(); }
+  public setPartA(): void { this.product.add("PartA"); }
+  public setPartB(): void { this.product.add("PartB"); }
+  public setPartC(): void { this.product.add("PartC"); }
+
+  public getProduct(): Product {
+    const result = this.product;
+    this.reset(); // 다음 빌드를 위해 리셋
+    return result;
+  }
+}
+
+class Director {
+  private builder!: Builder;
+
+  public setBuilder(builder: Builder): void {
+    this.builder = builder;
+  }
+
+  public buildMinimumProduct(): void {
+    this.builder.setPartA();
+  }
+
+  public buildFullProduct(): void {
+    this.builder.setPartA();
+    this.builder.setPartB();
+    this.builder.setPartC();
+  }
+}
+
+const builder = new ConcreteBuilder();
+const director = new Director();
+director.setBuilder(builder);
+
+director.buildMinimumProduct();
+let minProduct = builder.getProduct(); // ["PartA"]
+
+director.buildFullProduct();
+let fullProduct = builder.getProduct(); // ["PartA", "PartB", "PartC"]
+```
+
+### 사용 시기
+
+- 객체 생성 시 설정할 속성이 많거나 필수/선택 속성이 섞여 있을 때
+- 불변 객체를 단계별로 설정하고 싶을 때
+- 생성자에 많은 매개변수를 전달하기 어려울 때
+- 객체의 다양한 변형을 쉽게 관리하고 싶을 때
+
+### 장단점
+
+**장점**: 유연한 인터페이스, 분리된 로직, 객체 보존(항상 새 객체 생성), 파라미터 복잡성 완화
+
+**단점**: 복잡성 증가, 보일러플레이트가 큼, 얕은 복사 사용에 따른 중첩 객체 위험
+
+> Director가 Builder의 동작을 관리하고, Builder가 Product를 계속 생성합니다. 새로운 객체를 만들기 때문에 불변성이 구현됩니다.
+
+## Singleton Pattern
+
+클래스가 **단 하나의 인스턴스**만 가지며, 전역에서 접근 가능한 패턴입니다.
+
+```typescript
+class Singleton {
+  private static instance: Singleton;
+  private static _value: number;
+
+  private constructor() {} // 외부에서 new 불가
+
+  public static getInstance(): Singleton {
+    if (!Singleton.instance) {
+      Singleton.instance = new Singleton();
+    }
+    return Singleton.instance;
+  }
+
+  set value(value: number) { Singleton._value = value; }
+  get value() { return Singleton._value; }
+}
+```
+
+### 실전: Logger 클래스
+
+```typescript
+class Logger {
+  private static instance: Logger;
+  private constructor() {}
+
+  public static getInstance() {
+    if (!Logger.instance) {
+      Logger.instance = new Logger();
+    }
+    return Logger.instance;
+  }
+
+  public log(message: string): void {
+    const timestamp = new Date();
+    console.log(`[${timestamp.toLocaleString()} - ${message}]`);
+  }
+}
+
+const logger1 = Logger.getInstance();
+const logger2 = Logger.getInstance();
+// logger1 === logger2 (같은 인스턴스)
+```
+
+### 활용 사례
+
+- **Caching**: 서버 부하를 줄이기 위한 캐시 클래스
+- **Service Proxies**: 서버에 데이터를 요청할 때 하나의 싱글턴으로 통합
+- **Configuration Data**: 전역 설정 관리
+- **Logger**: 로깅 시스템
+
+### 주의점
+
+1. **의존성 증가**: 전역 상태 사용으로 클래스 간 결합도가 높아짐
+2. **테스트 어려움**: 첫 번째 테스트의 인스턴스가 두 번째 테스트에 영향
+3. **메모리 관리**: 한번 생성되면 프로그램 종료까지 GC에 수집되지 않음
+
+> `this.instance`가 아닌 `Logger.instance`로 접근하는 이유: static으로 선언했기 때문에 `Logger.instance`로 접근하는 것이 관례이며, static임을 명시합니다.
+
+## Prototype Pattern
+
+기존 객체를 **복제**하여 새로운 객체를 생성하는 패턴입니다.
+
+```typescript
+interface UserDetails {
+  name: string;
+  age: number;
+  email: string;
+}
+
+interface Prototype {
+  clone(): Prototype;
+  getUserDetails(): UserDetails;
+}
+
+class ConcretePrototype implements Prototype {
+  constructor(private user: UserDetails) {}
+
+  public clone(): Prototype {
+    const clone = Object.create(this);
+    clone.user = { ...this.user };
+    return clone;
+  }
+
+  public getUserDetails(): UserDetails {
+    return this.user;
+  }
+}
+
+let user1 = new ConcretePrototype({
+  name: "John", age: 32, email: "john@email.com"
+});
+
+let user2 = user1.clone();
+```
+
+### 실전: 도형 복제
+
+```typescript
+abstract class Shape {
+  constructor(public properties: { color: string; x: number; y: number }) {}
+  abstract clone(): Shape;
+}
+
+class Rectangle extends Shape {
+  constructor(
+    properties: { color: string; x: number; y: number },
+    public width: number,
+    public height: number
+  ) {
+    super(properties);
+  }
+
+  public clone(): Shape {
+    return new Rectangle(
+      { ...this.properties }, // 새로운 객체로 복사
+      this.width,
+      this.height
+    );
+  }
+}
+
+const redRect = new Rectangle({ color: "red", x: 10, y: 20 }, 20, 20);
+const blueRect = redRect.clone();
+blueRect.properties.color = "blue"; // 원본에 영향 없음
+```
+
+### 사용 시기
+
+- 객체 생성이 복잡하거나 비용이 많이 드는 경우
+- 기존 객체를 기반으로 유사한 객체를 반복 생성해야 하는 경우
+- React에서 current와 workInProgress Fiber를 만들 때도 이 패턴을 사용
+
+### 주의점
+
+- 얕은 복사만 가능하며, 깊은 복사 구현 시 코드 복잡성 증가
+- `JSON.parse(JSON.stringify(target))`으로도 깊은 복사 가능 (함수, undefined 등은 제외)
+
+## 정리
+
+| 패턴 | 핵심 | 사용 시기 |
+|------|------|----------|
+| **Factory** | 런타임에 클래스 결정 | 타입에 따라 다른 객체 생성 |
+| **Abstract Factory** | 관련 객체 그룹 생성 | 플랫폼/테마별 UI |
+| **Builder** | 단계별 객체 생성 | 복잡한 생성 과정, 다양한 변형 |
+| **Singleton** | 유일한 인스턴스 | 전역 설정, 로거, 캐시 |
+| **Prototype** | 기존 객체 복제 | 비용이 큰 객체 생성, 유사 객체 반복 생성 |
+
+다음 글에서는 구조 패턴(Bridge, Composite, Decorator, Facade)을 다룹니다.

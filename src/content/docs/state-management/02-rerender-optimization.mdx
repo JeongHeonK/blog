@@ -1,0 +1,152 @@
+---
+title: "리렌더링 최적화와 Context의 함정"
+description: "전역 상태에서 불필요한 리렌더링을 방지하는 3가지 방법과 React.memo가 Context를 막지 못하는 이유를 알아봅니다."
+sidebar:
+  order: 2
+---
+
+전역 상태를 사용할 때 가장 큰 과제는 불필요한 리렌더링을 방지하는 것입니다. 이 글에서는 React.memo와 Context의 관계, 그리고 전역 상태에서 리렌더링을 최적화하는 3가지 방법을 다룹니다.
+
+## memo는 Context의 리렌더링을 막지 못한다
+
+```jsx
+const ColorComponent = () => {
+  const color = useContext(ColorContext);
+  const renderCount = useRef(1);
+
+  useEffect(() => {
+    renderCount.current += 1;
+  });
+
+  return (
+    <div style={{ color }}>
+      Hello {color} (renders: {renderCount.current})
+    </div>
+  );
+};
+
+const MemoedColorComponent = memo(ColorComponent);
+```
+
+`memo`로 감싸더라도 Context 값이 변경되면 **리렌더링을 막지 못합니다**. 컴포넌트가 일관된 Context 값을 가져야 하기 때문에, memo와 관계없이 재렌더링이 발생합니다.
+
+> 렌더링 카운트가 2씩 증가하는 이유는 **Strict Mode** 때문입니다.
+
+## 전역 상태의 리렌더링 문제
+
+전역 상태는 여러 속성이 있으며 중첩된 객체일 수 있습니다.
+
+```jsx
+const state = {
+  a: 1,
+  b: { c: 2, d: 3 },
+  e: { f: 4, g: 5 },
+};
+```
+
+```jsx
+const Component1 = () => {
+  const stateBC = state.getState().b.c;
+  return <div>{stateBC}</div>;
+};
+
+const Component2 = () => {
+  const stateEG = state.getState().e.g;
+  return <div>{stateEG}</div>;
+};
+```
+
+`state.a++`가 실행되어도 Component1과 Component2는 다시 렌더링될 필요가 없습니다. 하지만 적절한 최적화 없이는 불필요한 리렌더링이 발생합니다.
+
+## 리렌더링을 최적화하는 3가지 방법
+
+### 1. 선택자 함수 (Selector)
+
+컴포넌트에서 전역 상태의 어느 부분을 사용할지 **명시적으로 지정**합니다.
+
+```jsx
+const Component = () => {
+  const value = useSelector((state) => state.b.c);
+  return <div>{value}</div>;
+};
+```
+
+선택자 함수는 유연하므로 **파생된 값**도 반환 가능합니다:
+
+```jsx
+const Component = () => {
+  const value = useSelector((state) => state.b.c * 2);
+  return <div>{value}</div>;
+};
+```
+
+`useSelector`는 상태가 변경될 때마다 선택자 함수의 결과를 비교하여 리렌더링 여부를 결정합니다. 이를 "수동 최적화"라고 합니다.
+
+### 2. 속성 접근 감지 (Tracked State)
+
+속성 접근을 감지하고 감지한 정보를 렌더링 최적화에 사용합니다.
+
+```jsx
+const Component = () => {
+  const trackedValue = useTrackedState();
+  return <div>{trackedValue.b.c}</div>;
+};
+```
+
+`state.b.c` 속성 값이 바뀔 때만 리렌더링이 발생합니다. 선택자 함수처럼 어느 속성인지 명시하지 않아도 되므로 **자동 렌더링 최적화**라고 합니다.
+
+### 3. 아톰 (Atom)
+
+리렌더링을 발생시키는 데 사용되는 **최소 상태 단위**입니다.
+
+```jsx
+const globalState = {
+  a: atom(1),
+  b: atom(2),
+  c: atom(3),
+};
+
+const Component = () => {
+  const value = useAtom(globalState.a);
+  return <>{value}</>;
+};
+```
+
+아톰이 분리되어 있다면 별도의 전역 상태를 갖는 것과 거의 같습니다.
+
+## 파생 상태 구독으로 리렌더링 최소화
+
+연속적인 값(숫자 등)을 직접 구독하면 값이 바뀔 때마다 리렌더링이 발생합니다. 컴포넌트가 실제로 필요한 것이 파생된 boolean이라면, 해당 boolean만 구독하도록 합니다.
+
+```jsx
+// Anti-pattern: 매 픽셀마다 리렌더링
+function Sidebar() {
+  const width = useWindowWidth();
+  const isMobile = width < 768;
+  return <nav className={isMobile ? "mobile" : "desktop"} />;
+}
+
+// 올바른 패턴: boolean 전환 시에만 리렌더링
+function Sidebar() {
+  const isMobile = useMediaQuery("(max-width: 767px)");
+  return <nav className={isMobile ? "mobile" : "desktop"} />;
+}
+```
+
+## useRef를 활용한 비렌더링 값 관리
+
+자주 변경되지만 UI에 직접 반영할 필요 없는 값(마우스 위치, 타이머 등)은 `useRef`에 저장하면 불필요한 리렌더링을 방지할 수 있습니다.
+
+## 정리
+
+| 방법 | 특징 | 예시 |
+|------|------|------|
+| **선택자 함수** | 수동 최적화, 명시적 지정 | `useSelector`, Zustand의 선택자 |
+| **속성 접근 감지** | 자동 최적화, 프록시 기반 | `useTrackedState` |
+| **아톰** | 최소 상태 단위 분리 | Jotai, Recoil |
+
+- `React.memo`는 Context의 리렌더링을 막지 못합니다
+- 전역 상태에서는 **사용하는 부분만 구독**하는 것이 핵심입니다
+- 파생된 값을 구독하여 불필요한 리렌더링을 최소화합니다
+
+다음 글에서는 Zustand와 Redux의 실전 비교를 다룹니다.

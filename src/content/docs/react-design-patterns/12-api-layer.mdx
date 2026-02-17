@@ -1,0 +1,270 @@
+---
+title: "API 레이어 설계와 상태 관리"
+description: "API 상태 관리의 발전 과정과 API 레이어 설계, TanStack Query 활용법을 알아봅니다."
+sidebar:
+  order: 12
+---
+
+프론트엔드에서 API 호출과 상태 관리는 필수적인 작업입니다. 이 글에서는 API 상태 관리를 단계적으로 추상화하고, API 레이어를 설계하며, TanStack Query로 최종 개선하는 과정을 다룹니다.
+
+## 기본 API 상태 관리
+
+가장 직관적인 방식은 `isLoading`, `error` 등의 상태를 개별적으로 관리하는 것입니다.
+
+```tsx
+type User = {
+  id: number;
+  email: string;
+  name: string;
+};
+
+const useFetchUsers = () => {
+  const [users, setUsers] = useState<User[]>();
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  const initFetchUsers = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      const response = await fetchUsers();
+      setUsers(response.data);
+      setIsLoading(false);
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }, []);
+
+  return { users, isLoading, error, initFetchUsers };
+};
+```
+
+이 방식의 문제는 상태가 늘어날수록 조건문이 복잡해진다는 것입니다.
+
+## API 상태 통합
+
+여러 boolean 상태 대신 하나의 상태 타입으로 통합합니다.
+
+```tsx
+type ApiStatus = "IDLE" | "PENDING" | "SUCCESS" | "ERROR";
+
+const useFetchUsers = () => {
+  const [users, setUsers] = useState<User[]>();
+  const [apiStatus, setApiStatus] = useState<ApiStatus>("IDLE");
+
+  const initFetchUsers = useCallback(async () => {
+    setApiStatus("PENDING");
+    try {
+      const response = await fetchUsers();
+      setUsers(response.data);
+      setApiStatus("SUCCESS");
+    } catch {
+      setApiStatus("ERROR");
+    }
+  }, []);
+
+  return { users, apiStatus, initFetchUsers };
+};
+```
+
+이제 switch문으로 깔끔하게 상태별 UI를 처리할 수 있습니다.
+
+```tsx
+export const Users = () => {
+  const { users, apiStatus, initFetchUsers } = useFetchUsers();
+
+  useEffect(() => {
+    initFetchUsers();
+  }, [initFetchUsers]);
+
+  switch (apiStatus) {
+    case "IDLE":
+      return null;
+    case "PENDING":
+      return <LazyLoader show delay={500} />;
+    case "ERROR":
+      return <p>Error occurred</p>;
+    case "SUCCESS":
+      return (
+        <>
+          {users?.map((user) => (
+            <Fragment key={user.id}>
+              <h3>{user.name}</h3>
+              <h3>{user.email}</h3>
+            </Fragment>
+          ))}
+        </>
+      );
+  }
+};
+```
+
+## try...catch 분리
+
+에러 처리 로직을 별도 헬퍼로 추출하면 재사용이 쉬워집니다.
+
+```tsx
+// helper/with-async.ts
+import { AxiosResponse } from "axios";
+
+export async function withAsync(fn: () => Promise<AxiosResponse<any, any>>) {
+  try {
+    if (typeof fn !== "function") {
+      throw new Error("The argument must be a function");
+    }
+    const { data } = await fn();
+    return { response: data, error: null };
+  } catch (error) {
+    return { error, response: null };
+  }
+}
+```
+
+사용 예시:
+
+```tsx
+const initFetchUsers = useCallback(async () => {
+  setApiStatus("PENDING");
+  const { response, error } = await withAsync(fetchUsers);
+
+  if (error) setApiStatus("ERROR");
+  if (response) {
+    setApiStatus("SUCCESS");
+    setUsers(response);
+  }
+}, []);
+```
+
+## API 상태 훅 추상화 (useApi)
+
+API 호출 패턴을 범용 훅으로 추상화합니다.
+
+```tsx
+export function useApi<T>(fn: (...args: any[]) => Promise<T[]>) {
+  const [data, setData] = useState<T[]>();
+  const [error, setError] = useState("");
+  const [status, setStatus] = useState<ApiStatus>();
+
+  const exec = async (...args: any[]) => {
+    try {
+      setStatus("PENDING");
+      const data = await fn(...args);
+      setData(data);
+      setStatus("SUCCESS");
+      return { response: data, error: null };
+    } catch (error) {
+      const fetchError = error as Error;
+      setError(fetchError.message);
+      setStatus("ERROR");
+      return { error, response: null };
+    }
+  };
+
+  return { data, setData, status, setStatus, exec };
+}
+```
+
+사용:
+
+```tsx
+const useFetchUsers = () => {
+  const {
+    data: users,
+    status: apiStatus,
+    exec: initFetchUsers,
+  } = useApi<User>(() => fetchUsers().then((res) => res.data));
+
+  return { users, apiStatus, initFetchUsers };
+};
+```
+
+## API 레이어 설계
+
+API 호출을 체계적으로 관리하기 위해 레이어를 분리합니다.
+
+### 1. Axios 인스턴스 생성
+
+```typescript
+// api/api.ts
+import axios from "axios";
+
+const axiosParams = {
+  baseURL: import.meta.env.PROD ? "http://localhost:3000" : "/",
+};
+
+const axiosInstance = axios.create(axiosParams);
+
+const api = (axios: typeof axiosInstance) => ({
+  get: (url: string, config = {}) => axios.get(url, config),
+  delete: (url: string, config = {}) => axios.delete(url, config),
+  post: (url: string, config = {}) => axios.post(url, config),
+  patch: (url: string, config = {}) => axios.patch(url, config),
+  put: (url: string, config = {}) => axios.put(url, config),
+});
+
+export default api(axiosInstance);
+```
+
+### 2. API 엔드포인트 정의
+
+```typescript
+// api/usersApi.ts
+import api from "./api";
+
+const URLS = {
+  fetchUserUrl: "users",
+};
+
+export const fetchUsers = () => {
+  return api.get(URLS.fetchUserUrl, {
+    baseURL: "https://jsonplaceholder.typicode.com/",
+  });
+};
+```
+
+### 3. 컴포넌트에서 사용
+
+```tsx
+const useFetchUsers = () => {
+  const [users, setUsers] = useState<User[]>();
+
+  const initFetchUsers = useCallback(async () => {
+    const response = await fetchUsers();
+    setUsers(response.data);
+  }, []);
+
+  return { users, initFetchUsers };
+};
+```
+
+이렇게 레이어를 분리하면 API 관련 코드가 한 곳에 모이고, baseURL 변경이나 인터셉터 추가 같은 전역 설정을 쉽게 관리할 수 있습니다.
+
+## TanStack Query로 개선
+
+위에서 직접 구현한 API 상태 관리를 TanStack Query가 한 줄로 해결합니다.
+
+```tsx
+import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query";
+
+const queryClient = new QueryClient();
+
+const App = () => (
+  <QueryClientProvider client={queryClient}>
+    <Users />
+  </QueryClientProvider>
+);
+
+const Users = () => {
+  const { data, isPending, isError, isSuccess } = useQuery({
+    queryKey: ["users"],
+    queryFn: fetchUsers,
+  });
+
+  // isPending, isError, isSuccess로 상태 분기
+};
+```
+
+직접 데이터 페칭 상태를 구현해보면, TanStack Query가 얼마나 많은 보일러플레이트를 줄여주는지 체감할 수 있습니다. 캐싱, 재요청, 낙관적 업데이트 등 복잡한 기능까지 제공하므로, 실무에서는 이런 라이브러리를 적극 활용하는 것이 좋습니다.
+
+## 핵심 교훈
+
+사용자에게는 항상 자신이 발생시킨 이벤트에 대한 피드백이 있어야 합니다. 개발 중에는 현재 동작하는 것을 알 수 있지만, 실제 사용자는 다릅니다. 로딩, 에러, 성공 등 모든 상태에 대한 피드백을 항상 염두에 두어야 합니다.

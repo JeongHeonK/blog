@@ -1,0 +1,180 @@
+---
+title: "Closure와 Scope"
+description: "JavaScript의 스코프 체인, 클로저의 동작 원리, 그리고 자주 나오는 트릭을 정리합니다."
+sidebar:
+  order: 3
+---
+
+클로저와 스코프는 JavaScript의 핵심 개념입니다. 이 두 개념을 이해하면 모듈 패턴, React의 Hook, 상태 관리 등 많은 것들이 자연스럽게 이해됩니다.
+
+## Scope (스코프)
+
+변수를 찾는 순서는 다음과 같습니다:
+
+1. **Local Scope** (현재 함수)
+2. **Outer Scope** (외부 함수들)
+3. **Global Scope** (전역)
+
+```javascript
+let age = 40;
+
+function outer() {
+  let age = 50;
+  function inner() {
+    let age = 30;
+  }
+  inner();
+  console.log(age); // 50 (outer의 age)
+}
+
+outer();
+```
+
+### 중요: 스코프는 선언 시점에 결정된다
+
+outer environment는 **선언 당시**에 결정됩니다. 호출 시점이 아닙니다.
+
+```javascript
+const age = 30;
+
+const inner = () => {
+  console.log(age); // 선언 시점의 외부 스코프 → 전역의 age
+};
+
+const outer = () => {
+  const age = 4000;
+  inner(); // 호출 위치와 무관
+};
+
+outer(); // 30 (4000이 아님!)
+```
+
+## Closure (클로저)
+
+클로저는 함수가 자신이 선언된 환경의 변수에 계속 접근할 수 있는 현상입니다.
+
+```javascript
+function outerFn() {
+  const sayHi = "hi";
+  return function() {
+    console.log(sayHi);
+  };
+}
+
+const sayHi = outerFn();
+sayHi(); // "hi" (outerFn 실행이 끝났지만 sayHi 변수에 접근 가능)
+```
+
+가비지 컬렉터(GC)는 참조가 남아있는 변수를 수거하지 않습니다. 반환된 함수가 `sayHi` 변수를 참조하고 있으므로, 함수 실행이 끝나도 그 값에 계속 접근할 수 있습니다.
+
+### 활용 1: 변수 은닉화 (캡슐화)
+
+```javascript
+function createCounter() {
+  let count = 0;
+  return {
+    increment() { return ++count; },
+    decrement() { return --count; },
+    getCount() { return count; },
+  };
+}
+```
+
+외부에서 `count`에 직접 접근할 수 없고, 오직 반환된 메서드를 통해서만 조작할 수 있습니다.
+
+### 활용 2: 팩토리 함수
+
+```javascript
+function createExponentFn(exp) {
+  return function(val) {
+    return val ** exp;
+  };
+}
+
+const square = createExponentFn(2);
+const cube = createExponentFn(3);
+
+square(4); // 16
+cube(3);   // 27
+```
+
+### 활용 3: 전역 변수 회피
+
+```javascript
+document.querySelector("button").addEventListener("click",
+  (function() {
+    let count = 1;
+    return function() {
+      count += 1;
+      console.log(count);
+    };
+  })()
+);
+```
+
+IIFE(즉시 실행 함수)와 클로저를 조합하면 전역 변수 없이 상태를 관리할 수 있습니다.
+
+### React에서의 클로저
+
+React 컴포넌트가 함수로 구현되기 때문에, 각 컴포넌트는 독립된 클로저 환경을 가집니다.
+
+```jsx
+export default function Button() {
+  const [count, handleClick] = useCount();
+  return <button onClick={handleClick}>{count}</button>;
+}
+```
+
+같은 컴포넌트를 여러 번 사용해도 각각 독립된 상태를 가지는 것이 바로 클로저 덕분입니다.
+
+## JavaScript의 Tricky Parts
+
+### 부동소수점 문제
+
+```javascript
+0.1 + 0.2; // 0.30000000000000004
+0.1 + 0.2 === 0.3; // false
+```
+
+소수점 계산이 필요할 때는 전용 라이브러리를 사용하는 것이 안전합니다.
+
+### NaN
+
+```javascript
+NaN === NaN; // false (NaN은 자기 자신과도 같지 않음)
+```
+
+- `isNaN()`: 형변환 발생
+- `Number.isNaN()`: 형변환 없이 엄격한 검사
+
+### 전위/후위 증감 연산자
+
+```javascript
+let x = 1;
+console.log(x++); // 1 (반환 후 증가)
+console.log(++x); // 3 (증가 후 반환)
+```
+
+할당 시 의도하지 않은 값이 들어갈 수 있으므로 주의가 필요합니다.
+
+### 자동 세미콜론 삽입 (ASI)
+
+```javascript
+function test() {
+  return    // 여기에 세미콜론이 자동 삽입됨!
+  {
+    name: "test"
+  }
+}
+test(); // undefined
+```
+
+`return` 뒤에 줄바꿈이 있으면 자동으로 세미콜론이 삽입됩니다. 객체를 반환할 때는 반드시 같은 줄에서 시작하세요.
+
+```javascript
+function test() {
+  return {
+    name: "test",
+  };
+}
+```

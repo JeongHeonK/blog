@@ -1,0 +1,164 @@
+---
+title: "객체와 Class 심화"
+description: "JavaScript 객체의 기본부터 Class 상속, Getter/Setter, Static, 초기화 블록까지 다룹니다."
+sidebar:
+  order: 4
+---
+
+JavaScript에서 거의 모든 것은 객체입니다. 객체의 기본 동작부터 Class를 활용한 고급 패턴까지 정리합니다.
+
+## 객체 기본
+
+```javascript
+const o1 = {};
+const o2 = new Object();
+
+o1.name = "hey";      // 점 표기법
+o2["age"] = 30;       // 대괄호 표기법
+```
+
+### 키 값은 자동으로 string 변환
+
+```javascript
+const obj = {};
+obj[1] = "hello";
+obj["1"] = "bye";
+console.log(obj[1]); // "bye" (같은 키)
+```
+
+### Computed Property Name
+
+```javascript
+const key = "age";
+const test = { age: 30 };
+console.log(test[key]); // 30
+```
+
+동적으로 프로퍼티에 접근하거나 추가할 때 사용합니다.
+
+### 데이터와 함수의 결합
+
+함수와 데이터가 분리되어 있으면 관리가 어렵습니다.
+
+```javascript
+// 분리된 형태
+function getTriangleArea(a, b) { return (a * b) / 2; }
+function getTriangleHypotenuse(a, b) { return Math.sqrt(a ** 2 + b ** 2); }
+```
+
+Class로 하나의 단위로 묶으면 관리가 쉬워지고, 메서드는 prototype에 자동 등록되어 메모리도 절약됩니다.
+
+## Class 활용
+
+```javascript
+class Triangle {
+  constructor(a, b) {
+    if (!Number.isFinite(a) || a <= 0) throw new Error("Invalid A");
+    if (!Number.isFinite(b) || b <= 0) throw new Error("Invalid B");
+    this.a = a;
+    this.b = b;
+  }
+
+  getArea() { return (this.a * this.b) / 2; }
+  getHypotenuse() { return Math.sqrt(this.a ** 2 + this.b ** 2); }
+}
+```
+
+`constructor()`에서 유효성 검사를 수행하면 잘못된 데이터로 객체가 생성되는 것을 방지할 수 있습니다.
+
+참고: `isFinite()`는 형변환을 발생시키지만, `Number.isFinite()`는 형변환 없이 엄격하게 검사합니다.
+
+## 상속과 프로토타입 체이닝
+
+```javascript
+class MutatedTri extends Triangle {
+  constructor(a, b, color) {
+    super(a, b);
+    this.color = color;
+  }
+
+  mutate(num) {
+    this.a += num;
+    this.b += num;
+  }
+}
+```
+
+프로토타입 체이닝 순서:
+1. 자신의 프로퍼티 탐색
+2. 프로토타입 탐색
+3. 부모의 프로토타입 탐색
+4. 찾지 못하면 `undefined` → 호출 시 `TypeError: undefined is not a function`
+
+## Static 메서드와 프로퍼티
+
+```javascript
+class Cat {
+  constructor(name, age) {
+    this.name = name;
+    this.age = age;
+  }
+
+  static species = "short tail";
+  static meow() { return "meow"; }
+}
+
+const smallCat = new Cat("kitty", 2);
+console.log(Cat.species);      // "short tail"
+console.log(Cat.meow());       // "meow"
+console.log(smallCat.species);  // undefined (인스턴스에서 접근 불가)
+```
+
+- static은 클래스 자체에 속하며, 인스턴스로 상속되지 않음
+- static 메서드에서 `this`는 클래스 자체를 가리킴
+- 인스턴스 관리, 팩토리 함수, 유틸리티 메서드에 활용
+
+## Getter & Setter
+
+```javascript
+class Circle {
+  constructor(radius) {
+    this._radius = radius;
+  }
+
+  get radius() { return this._radius; }
+
+  set radius(radius) {
+    if (radius < 0) throw new Error("음수 안됨");
+    this._radius = radius;
+  }
+
+  get diameter() { return this._radius * 2; }
+}
+
+const circle = new Circle(4);
+console.log(circle.diameter); // 8 (함수가 아닌 프로퍼티처럼 접근)
+circle.radius = -1;           // Error: "음수 안됨"
+```
+
+- 함수로 정의하지만 프로퍼티처럼 동작
+- 값의 유효성 검사가 가능
+- 기존 프로퍼티에서 파생된 새 프로퍼티를 만들 수 있음
+
+## Static Initialization Blocks
+
+ES2022에 도입된 기능으로, class가 생성될 때 한 번 실행되는 블록입니다.
+
+```javascript
+class DatabaseConnection {
+  static connection;
+
+  static {
+    DatabaseConnection.connection =
+      process.env.NODE_ENV === "production"
+        ? this.loadProductionConnection()
+        : this.loadDevelopmentConnection();
+  }
+
+  static loadProductionConnection() { /* ... */ }
+  static loadDevelopmentConnection() { /* ... */ }
+}
+```
+
+- 내부에서 `this`는 클래스 자체를 가리킴
+- 싱글턴 패턴이나 환경별 초기화에 활용

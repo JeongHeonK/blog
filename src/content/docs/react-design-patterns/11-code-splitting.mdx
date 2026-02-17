@@ -1,0 +1,229 @@
+---
+title: "코드 스플리팅과 에러 처리"
+description: "React.lazy, Suspense, Error Boundary를 활용한 최적화와 useEffect 남용을 줄이는 방법을 다룹니다."
+sidebar:
+  order: 11
+---
+
+사용자가 접속했을 때 모든 페이지의 코드를 한 번에 다운로드할 필요는 없습니다. 코드 스플리팅과 에러 처리 패턴으로 사용자 경험을 개선하는 방법을 알아봅니다.
+
+## React.lazy와 Suspense
+
+`lazy`는 컴포넌트 코드가 처음으로 렌더링될 때까지 로딩을 지연시킵니다.
+
+```jsx
+import { lazy, Suspense } from "react";
+
+const Home = lazy(() => import("./pages/Home"));
+const About = lazy(() => import("./pages/About"));
+const Contact = lazy(() => import("./pages/Contact"));
+
+function App() {
+  return (
+    <main>
+      <Nav />
+      <Suspense fallback={<Loading />}>
+        <Routes>
+          <Route path="/" element={<Home />} />
+          <Route path="/about" element={<About />} />
+          <Route path="/contact" element={<Contact />} />
+        </Routes>
+      </Suspense>
+    </main>
+  );
+}
+```
+
+## Next.js의 dynamic import
+
+Next.js에서는 `React.lazy()` 대신 `next/dynamic`을 사용합니다. SSR을 비활성화하거나 로딩 컴포넌트를 지정할 수 있으며, 무거운 컴포넌트(에디터, 차트 등)를 초기 번들에서 제외하면 TTI와 LCP에 직접적인 영향을 줍니다.
+
+```jsx
+import dynamic from "next/dynamic";
+
+const MonacoEditor = dynamic(
+  () => import("./monaco-editor").then((m) => m.MonacoEditor),
+  { ssr: false, loading: () => <Loading /> }
+);
+```
+
+## Barrel File Import 주의
+
+`index.js`에서 모든 모듈을 re-export하는 barrel file은 수천 개의 미사용 모듈을 로드할 수 있습니다.
+
+```jsx
+// 안티패턴: 전체 라이브러리 로드
+import { Check, X, Menu } from "lucide-react";
+
+// 올바른 패턴: 필요한 모듈만 직접 import
+import Check from "lucide-react/dist/esm/icons/check";
+import X from "lucide-react/dist/esm/icons/x";
+```
+
+Next.js 13.5+에서는 `optimizePackageImports`로 자동 변환할 수 있습니다.
+
+```javascript
+// next.config.js
+module.exports = {
+  experimental: {
+    optimizePackageImports: ["lucide-react", "@mui/material"],
+  },
+};
+```
+
+## 사용자 의도 기반 Preload
+
+hover/focus 시점에 무거운 번들을 미리 로드하면 체감 속도를 개선할 수 있습니다.
+
+```jsx
+function EditorButton({ onClick }) {
+  const preload = () => {
+    void import("./monaco-editor");
+  };
+
+  return (
+    <button onMouseEnter={preload} onFocus={preload} onClick={onClick}>
+      Open Editor
+    </button>
+  );
+}
+```
+
+## Error Boundary
+
+컴포넌트 렌더링 중 발생하는 에러를 catch하여 전체 앱이 멈추는 것을 방지합니다.
+
+```jsx
+import React from "react";
+
+export class ErrorBoundary extends React.Component {
+  state = { hasError: false };
+
+  static getDerivedStateFromError(error) {
+    return { hasError: true };
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return this.props.fallback;
+    }
+    return this.props.children;
+  }
+}
+```
+
+사용 예시:
+
+```jsx
+<ErrorBoundary fallback={<ErrorPage />}>
+  <App />
+</ErrorBoundary>
+```
+
+### 클래스 컴포넌트를 사용하는 이유
+
+아직 `getDerivedStateFromError`에 대응하는 함수 컴포넌트 API가 없기 때문입니다. `react-error-boundary` 라이브러리를 사용하면 좀 더 편리하게 사용할 수 있습니다.
+
+### Error Boundary의 한계
+
+Error Boundary는 **동기적**으로 동작하기 때문에 비동기 코드의 에러는 catch하지 못합니다. 비동기 에러는 state로 관리하여 조건부 렌더링으로 처리해야 합니다. 에러가 발생할 수 있는 컴포넌트 상위에 Error Boundary를 감싸서 페이지 전체가 멈추는 것을 방지하세요.
+
+## Flickering Loader 방지
+
+데이터 요청 시 로딩 상태가 너무 빠르게 전환되면 깜빡임이 발생합니다. 지연 로더를 사용하면 이를 방지할 수 있습니다.
+
+```tsx
+const LazyLoader = ({
+  show = false,
+  delay = 0,
+  defaultValue = "fetching",
+}) => {
+  const [showLoader, setShowLoader] = useState(false);
+
+  useEffect(() => {
+    let timeout: number;
+
+    if (!show) {
+      setShowLoader(false);
+      return;
+    }
+
+    if (delay === 0) {
+      setShowLoader(true);
+    } else {
+      timeout = setTimeout(() => setShowLoader(true), delay);
+    }
+
+    return () => {
+      if (timeout) clearTimeout(timeout);
+    };
+  }, [show, delay]);
+
+  return showLoader ? "Loading..." : defaultValue;
+};
+```
+
+`delay`를 설정하면 일정 시간이 지난 후에만 로딩 UI를 표시하여 빠른 응답에서의 불필요한 깜빡임을 방지합니다.
+
+## useEffect 남용 줄이기
+
+### 이벤트 핸들러로 대체
+
+사이드 이펙트가 특정 사용자 행동에 의해 발생하는 것이라면 useEffect가 아니라 이벤트 핸들러에서 직접 실행해야 합니다.
+
+```jsx
+// 안티패턴: useEffect로 이벤트 모델링
+function Form() {
+  const [submitted, setSubmitted] = useState(false);
+  const theme = useContext(ThemeContext);
+
+  useEffect(() => {
+    if (submitted) {
+      post("/api/register");
+      showToast("Registered", theme);
+    }
+  }, [submitted, theme]); // theme 변경 시에도 재실행!
+
+  return <button onClick={() => setSubmitted(true)}>Submit</button>;
+}
+
+// 올바른 패턴: 이벤트 핸들러에서 직접 실행
+function Form() {
+  const theme = useContext(ThemeContext);
+
+  function handleSubmit() {
+    post("/api/register");
+    showToast("Registered", theme);
+  }
+
+  return <button onClick={handleSubmit}>Submit</button>;
+}
+```
+
+### 파생 상태는 렌더링 중에 계산
+
+props/state에서 계산할 수 있는 값을 별도 state + useEffect로 관리하면 불필요한 렌더링과 상태 불일치가 발생합니다.
+
+```jsx
+// 안티패턴: 불필요한 state + useEffect
+function Form() {
+  const [firstName, setFirstName] = useState("First");
+  const [lastName, setLastName] = useState("Last");
+  const [fullName, setFullName] = useState("");
+
+  useEffect(() => {
+    setFullName(firstName + " " + lastName);
+  }, [firstName, lastName]);
+
+  return <p>{fullName}</p>;
+}
+
+// 올바른 패턴: 렌더링 중 직접 계산
+function Form() {
+  const [firstName, setFirstName] = useState("First");
+  const [lastName, setLastName] = useState("Last");
+  const fullName = firstName + " " + lastName;
+
+  return <p>{fullName}</p>;
+}
+```

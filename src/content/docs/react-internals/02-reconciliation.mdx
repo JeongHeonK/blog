@@ -1,0 +1,131 @@
+---
+title: "Reconciliation: Diffing 알고리즘의 원리"
+description: "React가 컴포넌트 변경을 감지하고 DOM을 효율적으로 업데이트하는 Diffing 알고리즘을 분석합니다."
+sidebar:
+  order: 2
+---
+
+Reconciliation은 React가 Virtual DOM을 비교하여 실제 DOM에 최소한의 변경을 적용하는 과정입니다. 이 과정의 핵심인 Diffing 알고리즘의 원리를 이해하면, React가 왜 특정 방식으로 동작하는지 알 수 있습니다.
+
+## Reconciler의 사전 작업
+
+Scheduler는 적절한 타이밍에 우선순위를 판단하여 WORK를 실행합니다.
+
+1. 이벤트가 발생한 컴포넌트에 `expirationTime`을 할당 (우선순위 관련 값)
+2. 해당 컴포넌트의 VDOM root를 가져옴
+3. root에 스케줄링 정보를 기록
+
+### root란?
+
+`ReactDOM.render()` 호출로 컴포넌트를 삽입하는 부모 태그가 root입니다. root와 VDOM은 1:1 관계이며, WORK 실행 우선순위 관련 스케줄링 정보는 root에 할당됩니다.
+
+## Diffing 알고리즘
+
+React는 두 개의 트리(workInProgress와 current)를 비교합니다.
+
+### 같은 타입 → 속성만 변경
+
+```jsx
+const Input = ({ hint }) => {
+  return <input type="text" id="unique-id" placeholder={hint} />;
+};
+
+// hint만 바뀐 경우
+<Input hint="hi" />
+<Input hint="hey" />
+```
+
+이 경우 기존 DOM을 unmount하고 새로운 DOM을 mount하는 것이 아니라, 기존 DOM의 속성만 변경합니다. 새로운 DOM을 mount하는 것 자체가 비용이 많이 드는 작업이기 때문입니다.
+
+### 타입 비교 방식
+
+HTML 요소를 return하는 컴포넌트는 **string** 타입으로, React 컴포넌트는 **함수** 타입으로 저장됩니다.
+
+```jsx
+// HTML 요소: string 타입
+{ type: 'input', props: { hint }, ... }
+
+// React 컴포넌트: 함수 참조
+{ type: Input, props: {}, ... }
+```
+
+함수는 일급 객체이므로 참조값으로 저장됩니다. 같은 함수 참조이면 같은 컴포넌트로 판단합니다.
+
+```jsx
+{ type: Input }  // 첫 번째 렌더링
+{ type: Input }  // 두 번째 렌더링 → 같은 참조 → 같은 컴포넌트
+```
+
+### 다른 타입 → 새로 mount
+
+```jsx
+const Component = () => {
+  const [state, setState] = useState(false);
+
+  return <>{state ? <Input /> : <Span />}</>;
+};
+
+// { type: Input } vs { type: Span } → 다른 타입 → 새로 mount
+```
+
+### 컴포넌트를 내부에서 선언하면 안 되는 이유
+
+```jsx
+const App = () => {
+  // 매 렌더링마다 새로운 함수 생성!
+  const Input = () => <input />;
+  return <Input />;
+};
+```
+
+함수 외부에서 선언하면 같은 참조가 유지되어 리렌더링을 유발하지 않습니다. 하지만 내부에서 선언하면 매번 새로운 함수가 생성되므로 항상 다른 컴포넌트로 인식되어 계속 unmount/mount가 반복됩니다.
+
+```javascript
+const x = () => {};
+const y = () => {};
+x === y; // always false
+```
+
+## Reconciliation Issue: 같은 타입의 함정
+
+같은 타입의 컴포넌트를 조건부로 렌더링할 때 의도치 않은 동작이 발생할 수 있습니다.
+
+```jsx
+const OTP = () => {
+  const [received, setReceived] = useState(false);
+
+  return (
+    <>
+      {received ? (
+        <Input id="otp-code" placeholder="Enter the otp code" />
+      ) : (
+        <Input id="email" placeholder="Enter the e-mail" />
+      )}
+    </>
+  );
+};
+```
+
+두 `Input`은 같은 타입이므로 React는 기존 DOM의 속성만 변경합니다. 그래서 사용자가 입력한 값이 그대로 유지되는 문제가 생깁니다.
+
+### 해결 1: 배열 위치로 구분
+
+```jsx
+{received ? <Input placeholder="otp" /> : null}
+{received ? null : <Input placeholder="email" />}
+
+// 배열로 비교:
+// [Input, null] vs [null, Input] → 다른 위치 → 새로 mount
+```
+
+### 해결 2: key로 구분
+
+```jsx
+{received ? (
+  <Input placeholder="otp" key="otp" />
+) : (
+  <Input placeholder="email" key="email" />
+)}
+```
+
+key가 다르면 React는 다른 컴포넌트로 인식하여 새로 mount합니다. 이것이 key를 통해 컴포넌트를 "초기화"하는 원리입니다.

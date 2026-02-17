@@ -1,0 +1,140 @@
+---
+title: "Keys가 중요한 진짜 이유"
+description: "key prop이 Reconciliation에서 어떤 역할을 하는지, 그리고 State Collocation 패턴을 알아봅니다."
+sidebar:
+  order: 4
+---
+
+React에서 `key`는 단순히 경고를 없애기 위한 것이 아닙니다. Reconciliation 과정에서 컴포넌트의 **정체성(identity)**을 결정하는 핵심 요소입니다.
+
+## key로 컴포넌트 초기화하기
+
+```jsx
+function App() {
+  const [productSwitch, setProductSwitch] = useState(false);
+
+  return (
+    <div>
+      {productSwitch ? (
+        <>
+          <span>Shirts</span> <Counter />
+        </>
+      ) : (
+        <>
+          <span>Shoes</span> <Counter />
+        </>
+      )}
+      <button onClick={() => setProductSwitch(!productSwitch)}>Switch</button>
+    </div>
+  );
+}
+```
+
+JSX는 `createElement()`로 객체를 생성합니다. 이 경우 두 분기 모두 `{type: Fragment, children: [{type: span}, {type: Counter}]}` 형태로 **같은 구조**이기 때문에, React는 기존 컴포넌트의 속성만 변경하고 Counter의 상태는 유지됩니다.
+
+`key`를 추가하면 다른 컴포넌트로 인식시켜 새로 mount할 수 있습니다. 이때 Fragment 전체가 아닌 `Counter`에만 key를 추가하는 것이 효율적입니다.
+
+## map()에서 key에 index를 쓰면 안 되는 이유
+
+```jsx
+const data = [
+  { id: "teacher", placeholder: "teacher Id" },
+  { id: "student", placeholder: "student Id" },
+];
+
+const App = () => {
+  const [isChecked, setIsChecked] = useState(false);
+  const inputs = isChecked ? [...data].reverse() : data;
+
+  return (
+    <>
+      {inputs.map((input, index) => (
+        <Input key={index} placeholder={input.placeholder} />
+      ))}
+    </>
+  );
+};
+```
+
+React는 **type과 key**가 같을 때 같은 컴포넌트라 판단하여 기존 DOM을 재사용합니다. index를 key로 사용하면 배열이 재정렬될 때 각 데이터에 할당된 index가 달라지고, React는 다른 컴포넌트라 판단하여 새로 mount합니다. 이를 방지하기 위해 고유한 ID를 key로 할당해야 합니다.
+
+## Dynamic rendering과 일반 컴포넌트의 구분
+
+```jsx
+const App = () => {
+  return (
+    <>
+      {inputs.map((input) => (
+        <Input key={input.id} placeholder={input.placeholder} />
+      ))}
+      <Input /> {/* 일반 렌더링 */}
+    </>
+  );
+};
+```
+
+React는 dynamic rendering(map 등)을 사용한 컴포넌트를 별도의 배열로 관리하여 일반 렌더링 컴포넌트와 구분합니다.
+
+```javascript
+[
+  [
+    { type: Input, key: 'teacher' },
+    { type: Input, key: 'student' },
+  ],
+  { type: Input }, // 별도 위치
+]
+```
+
+이렇게 배열로 분리하여 관리하므로 위치를 혼동하지 않습니다.
+
+## State Collocation
+
+무조건 state를 상위로 끌어올리는 것(state lifting)이 최선은 아닙니다. 특정 state가 오직 한 컴포넌트에서만 사용된다면, 오히려 사용되는 곳으로 내려보내는 것이 더 나을 수 있습니다.
+
+```jsx
+// 안티패턴: 불필요한 state lifting
+const App = () => {
+  const [input, handleChange] = useInput("");
+
+  return (
+    <>
+      <HeavyComp />      {/* input 변경 시 불필요하게 리렌더링 */}
+      <OtherComp />      {/* input 변경 시 불필요하게 리렌더링 */}
+      <Input value={input} onChange={handleChange} />
+    </>
+  );
+};
+```
+
+`input` 상태는 `Input` 컴포넌트에서만 사용하는데, 굳이 상위로 올려서 `HeavyComp`와 `OtherComp`까지 리렌더링을 유발할 필요가 없습니다.
+
+### 콜백에서만 사용하는 상태 구독 제거
+
+렌더링에는 사용하지 않고 이벤트 핸들러에서만 읽는 값이라면, 구독할 필요 없이 사용 시점에 직접 읽는 것이 좋습니다.
+
+```jsx
+// 안티패턴: searchParams 구독 → 쿼리 변경마다 리렌더링
+function ShareButton({ chatId }) {
+  const searchParams = useSearchParams();
+
+  const handleShare = () => {
+    const ref = searchParams.get("ref");
+    shareChat(chatId, { ref });
+  };
+
+  return <button onClick={handleShare}>Share</button>;
+}
+
+// 올바른 패턴: 사용 시점에 직접 읽기
+function ShareButton({ chatId }) {
+  const handleShare = () => {
+    const params = new URLSearchParams(window.location.search);
+    const ref = params.get("ref");
+    shareChat(chatId, { ref });
+  };
+
+  return <button onClick={handleShare}>Share</button>;
+}
+```
+
+핵심 원칙은 같습니다. **상태는 실제로 필요한 곳에서, 필요한 시점에 접근하는 것이 최적**입니다.

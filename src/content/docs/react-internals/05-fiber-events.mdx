@@ -1,0 +1,78 @@
+---
+title: "Fiber 아키텍처와 이벤트 시스템"
+description: "React의 Fiber 아키텍처 구조와 SyntheticEvent 기반 이벤트 시스템을 이해합니다."
+sidebar:
+  order: 5
+---
+
+React의 내부 동작을 이해하는 마지막 단계로, Fiber 아키텍처의 구조와 React의 이벤트 시스템을 살펴봅니다.
+
+## Fiber 아키텍처
+
+### Fiber 이전: Stack Reconciler
+
+React 16 이전에는 Stack 기반의 Reconciler를 사용했습니다. 이 방식은 렌더링을 시작하면 완료될 때까지 중단할 수 없었고, 큰 컴포넌트 트리에서 UI가 멈추는 문제가 있었습니다.
+
+### Fiber Reconciler
+
+Fiber 아키텍처는 이 문제를 해결하기 위해 도입되었습니다. 핵심 변화는 **렌더링 작업을 중단하고 재개할 수 있게** 된 것입니다.
+
+Fiber 노드는 각 React Element에 대응하는 확장 객체로, 다음 정보를 포함합니다:
+
+- 컴포넌트의 상태 (state)
+- 라이프사이클 정보
+- Hook 체인 (`memoizedState`)
+- 렌더링 우선순위 (`expirationTime`)
+
+### Double Buffering
+
+Fiber Reconciler는 두 개의 트리를 유지합니다:
+
+- **current 트리**: 현재 화면에 표시된 상태
+- **workInProgress 트리**: 업데이트가 적용될 새로운 상태
+
+Reconciliation이 완료되면 workInProgress가 새로운 current가 됩니다. 이 방식을 **Double Buffering**이라고 하며, 화면 깜빡임 없이 업데이트를 적용할 수 있습니다.
+
+### Scheduler와 우선순위
+
+Scheduler는 WORK의 실행 타이밍을 관리합니다.
+
+- 우선순위는 이벤트 발생 시점(expirationTime)으로 결정
+- Reconciler가 Fiber에 expirationTime을 할당
+- 높은 우선순위 작업(사용자 입력 등)은 낮은 우선순위 작업(데이터 페칭 결과 반영 등)을 중단시킬 수 있음
+
+이것이 `useTransition`이나 `useDeferredValue`가 동작하는 기반입니다.
+
+## React의 이벤트 시스템
+
+React는 브라우저의 네이티브 이벤트를 직접 사용하지 않고, **SyntheticEvent**라는 자체 이벤트 시스템을 사용합니다.
+
+### SyntheticEvent
+
+기존 웹 이벤트를 래핑하여 크로스 브라우저 호환성을 보장하고 추가 기능을 수행합니다.
+
+### Event Bubbling
+
+한 요소에 이벤트가 발생하면 해당 요소의 핸들러가 동작하고, 이어서 부모 요소의 핸들러가 순차적으로 동작합니다. 가장 최상단 조상 요소까지 이 과정이 반복됩니다.
+
+### Event Capturing
+
+Event Bubbling 이전에 발생하는 단계입니다. 이벤트가 최상위에서 타겟 요소까지 내려갑니다.
+
+전체 순서: **Capturing → Target → Bubbling**
+
+React에서는 `onClick` 대신 `onClickCapture`를 사용하면 Capturing 단계에서 이벤트를 처리할 수 있습니다.
+
+```jsx
+<div onClickCapture={() => console.log("capture phase")}>
+  <button onClick={() => console.log("target / bubble phase")}>
+    Click
+  </button>
+</div>
+```
+
+### 이벤트 위임 (Event Delegation)
+
+React는 이벤트 핸들러를 각 DOM 요소에 개별적으로 부착하지 않습니다. 대신 root 요소에 이벤트를 위임하여 성능을 최적화합니다. 이벤트가 발생하면 React가 내부적으로 어떤 컴포넌트에서 발생했는지 판단하여 적절한 핸들러를 호출합니다.
+
+이것은 React가 수천 개의 요소가 있어도 효율적으로 이벤트를 처리할 수 있는 이유입니다.

@@ -1,0 +1,247 @@
+---
+title: "데이터 페칭과 Server Action"
+description: "Next.js의 서버 컴포넌트 데이터 페칭, Server Action, 폼 처리, Optimistic Update를 다룹니다."
+sidebar:
+  order: 3
+---
+
+Next.js의 데이터 페칭은 React의 `useEffect` 기반 접근과 크게 다릅니다. 서버 컴포넌트에서 직접 비동기 처리가 가능하며, Server Action을 통해 서버 사이드 로직을 간단하게 실행할 수 있습니다.
+
+## 서버 컴포넌트에서 데이터 페칭
+
+React에서는 `useEffect`를 사용하지만, Next.js의 서버 컴포넌트에서는 컴포넌트가 promise 객체를 반환해도 됩니다.
+
+```jsx
+export default async function SomeComponent() {
+  const response = await fetch("url");
+
+  if (!response.ok) {
+    throw new Error("Failed to fetch news.");
+  }
+
+  const data = await response.json();
+
+  return <div>{data}</div>;
+}
+```
+
+서버 컴포넌트는 서버에서만 실행되기 때문에 바로 데이터베이스에 접근하는 코드를 실행해도 문제 없습니다.
+
+### 로딩 처리
+
+- 같은 폴더 경로에 `loading.js`를 추가하면 전체 페이지 로딩 처리
+- 부분적인 로딩 처리에는 `<Suspense>` 사용
+
+```jsx
+function Page() {
+  return (
+    <div>
+      <Header />
+      <Suspense fallback={<Skeleton />}>
+        <SlowDataComponent />
+      </Suspense>
+      <Footer />
+    </div>
+  );
+}
+```
+
+### 서버/클라이언트 컴포넌트 분리 팁
+
+서버 컴포넌트에서 클라이언트 컴포넌트로 전환할 때, Hook이 1~2개의 태그에서만 사용된다면 해당 부분만 클라이언트 컴포넌트로 분리하고 나머지는 서버 컴포넌트 상태를 유지하는 것이 좋습니다.
+
+## Waterfall 제거
+
+독립적인 데이터 요청이 순차적으로 실행되면 불필요한 대기가 발생합니다.
+
+```jsx
+// Anti-pattern: 순차 실행 → 3번의 round trip
+const user = await fetchUser();
+const posts = await fetchPosts();
+const comments = await fetchComments();
+
+// 올바른 패턴: 병렬 실행 → 1번의 round trip
+const [user, posts, comments] = await Promise.all([
+  fetchUser(),
+  fetchPosts(),
+  fetchComments(),
+]);
+```
+
+또는 각 데이터를 독립 컴포넌트로 분리하면 React가 자동으로 병렬 실행합니다:
+
+```jsx
+export default function Page() {
+  return (
+    <div>
+      <Header />   {/* 독립적으로 fetch */}
+      <Sidebar />  {/* 독립적으로 fetch */}
+      <MainContent /> {/* 독립적으로 fetch */}
+    </div>
+  );
+}
+```
+
+## RSC 경계에서의 직렬화 최소화
+
+서버 컴포넌트에서 클라이언트 컴포넌트로 데이터를 전달할 때, 실제 사용하는 필드만 전달해야 합니다.
+
+```jsx
+// Anti-pattern: 50개 필드 전체 직렬화
+<Profile user={user} />
+
+// 올바른 패턴: 사용하는 필드만 전달
+<Profile name={user.name} avatar={user.avatar} />
+```
+
+## Server Action
+
+Server Action은 React에 내장된 기능이나, Next.js 같은 프레임워크를 통해서만 사용 가능합니다.
+
+### 기본 사용
+
+```jsx
+// 함수 내에 "use server" 명시
+async function submitForm(formData) {
+  "use server";
+  const name = formData.get("name");
+  // 서버 사이드 로직
+}
+
+// form의 action에 할당
+<form action={submitForm}>
+  <input name="name" />
+  <button type="submit">제출</button>
+</form>
+```
+
+파일을 분리할 경우 최상단에 `"use server"`를 명시합니다 (클라이언트 컴포넌트에서 사용할 경우 필수).
+
+### Server Action 보안
+
+Server Action은 **public 엔드포인트**로 노출됩니다. API route와 동일한 수준의 보안을 적용해야 합니다.
+
+```jsx
+"use server";
+import { verifySession } from "@/lib/auth";
+
+export async function deletePost(postId) {
+  // 1. 인증 확인
+  const session = await verifySession();
+  if (!session) throw new Error("Unauthorized");
+
+  // 2. 인가 확인
+  const post = await getPost(postId);
+  if (post.authorId !== session.user.id) throw new Error("Forbidden");
+
+  // 3. 실제 작업 수행
+  await db.post.delete({ where: { id: postId } });
+}
+```
+
+미들웨어나 레이아웃의 인증에만 의존하지 말고, **각 Server Action 내부에서** 인증과 인가를 확인해야 합니다.
+
+## useFormStatus
+
+폼 제출 상태를 추적합니다.
+
+```jsx
+"use client";
+import { useFormStatus } from "react-dom";
+
+function SubmitButton() {
+  const { pending } = useFormStatus();
+  return (
+    <button type="submit" disabled={pending}>
+      {pending ? "제출 중..." : "제출"}
+    </button>
+  );
+}
+```
+
+`'use client'`를 사용하므로 컴포넌트를 분리해야 합니다.
+
+## useActionState
+
+양식 관련 UI 업데이트 시 사용합니다.
+
+```jsx
+import { useActionState } from "react";
+
+const [state, formAction] = useActionState(fn, initialState);
+```
+
+`useActionState`에 사용된 `fn`은 첫 번째 인자로 `prevState`, 두 번째로 `formData`를 받습니다.
+
+## Server Action 트리거 방법
+
+### form action
+
+```jsx
+<form action={serverFunc}>
+  <button type="submit">제출</button>
+</form>
+```
+
+### formAction 속성
+
+```jsx
+<form>
+  <button formAction={serverFunc}>좋아요</button>
+</form>
+```
+
+## revalidatePath()
+
+Next.js는 한번 로드한 페이지를 캐시에 저장합니다. 데이터 변경 후 업데이트된 페이지를 보여주려면 `revalidatePath()`를 사용합니다.
+
+```jsx
+revalidatePath('/feed', 'page');   // 특정 페이지 재검증
+revalidatePath('/', 'layout');     // 모든 페이지 재검증
+```
+
+## Optimistic Update
+
+`useOptimistic`을 사용하여 서버 응답을 기다리지 않고 즉시 UI를 업데이트합니다.
+
+```jsx
+const [optimisticState, addOptimistic] = useOptimistic(state, updateFn);
+
+// addOptimistic을 실행하면 updateFn이 즉시 실행
+// 서버 응답이 오면 실제 데이터로 대체
+```
+
+## after()로 비차단 작업 처리
+
+로깅, 분석, 알림 등 응답을 차단할 필요 없는 작업은 `after()`를 사용하면 응답 전송 후 실행됩니다.
+
+```jsx
+import { after } from "next/server";
+
+export async function POST(request) {
+  await updateDatabase(request);
+
+  // 응답 전송 후 비동기적으로 실행
+  after(async () => {
+    await logUserAction({
+      userAgent: request.headers.get("user-agent"),
+    });
+  });
+
+  return Response.json({ status: "success" });
+}
+```
+
+## 정리
+
+| 기능 | 설명 |
+|------|------|
+| 서버 컴포넌트 페칭 | `async/await`로 직접 데이터 요청 |
+| Server Action | `"use server"` + form action |
+| useFormStatus | 폼 제출 상태 추적 |
+| useActionState | 폼 상태 관리 |
+| useOptimistic | 낙관적 업데이트 |
+| revalidatePath | 캐시 재검증 |
+| after() | 응답 후 비차단 작업 |
+
+다음 글에서는 성능 최적화와 인증을 다룹니다.

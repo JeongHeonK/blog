@@ -1,0 +1,192 @@
+---
+title: "실전 FP: Lodash, Ramda"
+description: "Lodash-FP와 Ramda를 활용한 실전 함수형 프로그래밍과 OOP에서 FP로의 전환 사례를 살펴봅니다."
+sidebar:
+  order: 5
+---
+
+지금까지 함수형 프로그래밍의 개념과 직접 구현을 살펴봤습니다. 이 글에서는 Lodash-FP와 Ramda 라이브러리를 활용한 실전적인 함수형 프로그래밍을 다룹니다.
+
+## Lodash-FP
+
+Lodash-FP는 Lodash의 함수형 프로그래밍 버전으로, 모든 함수에 **자동 커링**이 적용됩니다.
+
+### 기본 사용법
+
+```javascript
+let sum = _.add(5, 2); // 7
+
+let add5 = _.add(5);   // function()
+let result = add5(2);   // 7
+```
+
+커리가 적용되기 쉽도록 먼저 데이터를 받고, 콜백 함수를 받는 구조입니다.
+
+### 함수 합성
+
+```javascript
+const addOne = _.map((num) => num + 1);
+const multipleByThree = _.map((num) => num * 3);
+const removeNumbersOver100 = _.filter((num) => num <= 100);
+const sumAllNumbers = _.reduce((sum, num) => sum + num)(0);
+
+const processNumbers = _.pipe(
+  addOne,
+  multipleByThree,
+  removeNumbersOver100,
+  sumAllNumbers,
+  console.log
+);
+
+processNumbers([5, 8, 20, 100, 40]); // 108 <- [18, 27, 63]
+```
+
+### 실습: 점수 처리 파이프라인
+
+```javascript
+const boostSingleScores = _.map((val) => (val < 10 ? val * 3 : val));
+const rmOverScores = _.filter((val) => val <= 100);
+const rmZeroScores = _.filter((val) => val > 0);
+
+const processNum = _.pipe(boostSingleScores, rmOverScores, rmZeroScores);
+
+const computeAverage = _.curry(_.mean);
+const processAndGetAverage = _.pipe(processNum, computeAverage);
+
+const result = processNum([50, 6, 100, 0, 10, 75, 8, 60, 90, 80, 0, 30, 110]);
+```
+
+## Ramda
+
+Ramda는 함수형 프로그래밍에 특화된 라이브러리로 다음 특징을 가집니다:
+
+- **자동 커링** 적용
+- **불변성** 및 부수효과 방지
+- 파라미터 정의가 커링에 적합하도록 설계
+
+### 기본 사용법
+
+```javascript
+const addThree = R.add(3);
+console.log(addThree(5)); // 8
+```
+
+### 함수 합성
+
+```javascript
+const addOne = R.map((num) => num + 1);
+const multiByThree = R.map((num) => num * 3);
+const removeNumOver100 = R.filter((num) => num <= 100);
+const sumAllNumbers = R.reduce((sum, num) => sum + num)(0);
+```
+
+### Ramda + curry + pipe 조합
+
+```javascript
+const getUsersUser = R.pipe(R.curry(getUser)(users), R.clone);
+
+const getHenry = function () {
+  return getUsersUser("Henry");
+};
+
+const updateHenry = R.pipe(
+  R.curry(updateScore)(getHenry()),
+  R.clone,
+  updateTries,
+  R.curry(storeUser)(users)
+);
+```
+
+## Ramda vs Lodash
+
+두 라이브러리 모두 기능적으로 중복되며 비슷하지만, 철학에서 차이가 있습니다.
+
+### Lodash
+
+- **유연성과 성능**에 중점
+- 일관성, 호환성, 커스터마이징, 성능에 초점
+
+### Ramda
+
+- **깔끔한 API 설계**를 중시
+- 함수 합성을 쉽게 하며, 데이터의 불변성과 부작용 없는 코드를 중시
+
+### 주요 차이점
+
+Lodash는 **참조 동일성**에 초점을 맞추고, Ramda는 **값 동일성**에 중점을 둡니다.
+
+## OOP에서 FP로: 실전 전환 사례
+
+클래스 기반의 주사위 게임을 함수형으로 전환하는 예시를 살펴보겠습니다.
+
+### OOP 버전
+
+```javascript
+class DiceGame {
+  constructor(rollBtnId, resultDisplayId) {
+    this.rollBtn = document.querySelector(`#${rollBtnId}`);
+    this.resultDisplay = document.querySelector(`#${resultDisplayId}`);
+    this.resultDisplay.textContent = "roll!";
+    this.rollBtn.addEventListener("click", this.rollDice);
+  }
+
+  getRandomRoll() {
+    return Math.ceil(Math.random() * 7);
+  }
+
+  checkWin(score) {
+    return score === 6;
+  }
+
+  rollDice() {
+    const RandomScore = this.getRandomRoll();
+    if (this.checkWin(RandomScore)) {
+      this.resultDisplay.textContent = "you win";
+    } else {
+      this.resultDisplay.textContent = "try again";
+    }
+  }
+}
+
+new DiceGame("dice", "display");
+```
+
+### FP 버전
+
+```javascript
+const getRandomRoll = () => Math.ceil(Math.random() * 7);
+
+const checkWin = (num) => num === 6;
+
+const getNode = (id) => document.getElementById(id);
+
+const updateText = (node, text) => (node.textContent = text);
+
+const rollDice = (resultDisplay) => {
+  const randomScore = getRandomRoll();
+  resultDisplay.textContent = checkWin(randomScore) ? "you win" : "try again";
+};
+
+const createDiceGame = (btnId, displayId) => {
+  const btn = getNode(btnId);
+  const display = getNode(displayId);
+  updateText(display, "roll!");
+  btn.addEventListener("click", () => rollDice(display));
+};
+
+createDiceGame("btn", "result");
+```
+
+각 함수가 하나의 역할만 수행하며, `this` 바인딩 문제에서 자유롭습니다.
+
+## 정리
+
+| 라이브러리 | 특징 | 철학 |
+|-----------|------|------|
+| **Lodash-FP** | 자동 커링, pipe 제공 | 유연성과 성능 중시 |
+| **Ramda** | 자동 커링, 불변성 내장 | 깔끔한 API, 함수 합성 중시 |
+
+핵심 인사이트:
+- 절차적 프로그래밍은 **값을 조합해서 반환**하는 반면, 선언적 프로그래밍은 **함수들을 조합해서 함수를 만들어냅니다**
+- 객체지향과 함수형은 양자택일이 아니라 **함께 사용할 수 있는 개념**입니다
+- 직접 curry나 pipe를 구현하기보다 Lodash-FP나 Ramda 같은 검증된 라이브러리를 활용하는 것이 실용적입니다

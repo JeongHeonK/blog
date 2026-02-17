@@ -1,0 +1,202 @@
+---
+title: "성능 최적화와 인증"
+description: "Next.js Image 컴포넌트, Metadata, 동적 로딩, CSS 최적화, 사용자 인증 구현을 정리합니다."
+sidebar:
+  order: 4
+---
+
+Next.js는 다양한 최적화 기능을 기본으로 제공합니다. 이 글에서는 Image 컴포넌트, 메타데이터, 동적 로딩 등 성능 최적화 기법과 인증 구현 방법을 알아봅니다.
+
+## Image 컴포넌트
+
+Next.js의 `Image` 컴포넌트는 자동 최적화, layout shift 방지, 로딩 속도 향상을 제공합니다.
+
+### 기본 사용법
+
+```jsx
+import Image from "next/image";
+import logo from "@/assets/logo.png";
+
+export default function Navbar() {
+  return (
+    <>
+      {/* 올바른 사용 - import한 객체를 직접 할당 */}
+      <Image src={logo} alt="logo" />
+
+      {/* 에러 - .src 속성을 사용하면 안 됨 */}
+      <Image src={logo.src} alt="logo" />
+    </>
+  );
+}
+```
+
+### width와 height
+
+`width`와 `height`를 미리 요구해서 렌더링 시 이미지가 들어갈 공간을 확보합니다. 이를 통해 **layout shift**를 방지합니다.
+
+- 고정 크기: `width`와 `height` 사용
+- 반응형: `sizes` 프로퍼티 사용 (예: `sizes="10vw"`)
+
+### priority
+
+항상 로드되어야 하는 이미지(LCP 이미지 등)에는 `priority` 프로퍼티를 추가합니다. 기본값은 `lazy` 로딩이므로 화면에 보일 때만 로드됩니다.
+
+### fill
+
+동적으로 생성된 이미지의 크기를 알 수 없을 때 사용합니다. 부모 컨테이너의 크기에 의해 결정되므로 부모 요소에 크기를 지정해야 합니다.
+
+```jsx
+<div style={{ position: "relative", width: "300px", height: "200px" }}>
+  <Image src={dynamicImage} alt="dynamic" fill />
+</div>
+```
+
+### 외부 이미지
+
+외부에서 이미지를 불러올 경우 `next.config.js`에 설정을 추가합니다.
+
+```javascript
+const nextConfig = {
+  images: {
+    remotePatterns: [{ hostname: "example.com" }],
+  },
+};
+```
+
+## Metadata
+
+### 정적 Metadata
+
+```jsx
+export const metadata = {
+  title: "Page Title",
+  description: "Page description",
+  keywords: ["Next.js", "React", "JavaScript"],
+  authors: [{ name: "Author" }],
+  creator: "Creator Name",
+};
+```
+
+### 동적 Metadata
+
+동적 라우팅을 통한 상세 페이지에서 동적으로 메타데이터를 생성합니다.
+
+```jsx
+export async function generateMetadata({ params }) {
+  return {
+    title: `Detail ${params.id}`,
+    description: `Detail ${params.id} 입니다.`,
+  };
+}
+```
+
+데이터를 불러와서 생성할 수도 있습니다:
+
+```jsx
+export async function generateMetadata() {
+  const post = await getPost();
+  return {
+    title: `${post.length}개의 post`,
+    description: `${post.length}개의 post가 있습니다.`,
+  };
+}
+```
+
+## next/dynamic - 지연 로딩
+
+초기 렌더링에 필요하지 않은 무거운 컴포넌트(에디터, 차트, 지도 등)는 `next/dynamic`으로 분리합니다.
+
+```jsx
+import dynamic from "next/dynamic";
+
+const Chart = dynamic(() => import("@/components/Chart"), {
+  ssr: false,
+  loading: () => <ChartSkeleton />,
+});
+```
+
+초기 번들 크기를 줄여 TTI(Time to Interactive)와 LCP를 개선합니다.
+
+## 비핵심 서드파티 라이브러리 지연 로드
+
+Analytics, 에러 트래킹 같은 라이브러리는 hydration 이후에 로드하여 초기 번들에서 제외합니다.
+
+```jsx
+import dynamic from "next/dynamic";
+
+const Analytics = dynamic(
+  () => import("@vercel/analytics/react").then((m) => m.Analytics),
+  { ssr: false }
+);
+
+export default function RootLayout({ children }) {
+  return (
+    <html>
+      <body>
+        {children}
+        <Analytics />
+      </body>
+    </html>
+  );
+}
+```
+
+## CSS content-visibility
+
+`content-visibility: auto`를 적용하면 화면 밖 요소의 렌더링을 지연시킵니다.
+
+```css
+.list-item {
+  content-visibility: auto;
+  contain-intrinsic-size: 0 80px;
+}
+```
+
+1000개의 항목이 있을 때, 화면 밖의 ~990개 항목의 layout/paint를 건너뛰어 약 **10배 빠른 초기 렌더링**이 가능합니다.
+
+## 사용자 인증
+
+### 인증 라이브러리
+
+주요 인증 라이브러리로 **Lucia**와 **NextAuth**가 있습니다.
+
+### cookies()
+
+어떤 라이브러리를 사용하든 쿠키에 sessionId를 저장할 수 있습니다. 요청 시 자동으로 쿠키 정보가 함께 전송됩니다.
+
+```jsx
+import { cookies } from "next/headers";
+
+// 쿠키 확인
+cookies().has("session"); // true | false
+
+// 쿠키 설정
+cookies().set("session", value, options);
+```
+
+### searchParams 활용
+
+URL의 쿼리 파라미터를 통해 로그인/가입 화면을 전환할 수 있습니다.
+
+```jsx
+// /auth?mode=login → 로그인 폼
+// /auth?mode=signup → 가입 폼
+
+export default function AuthPage({ searchParams }) {
+  const mode = searchParams.mode; // "login" | "signup"
+  // ...
+}
+```
+
+`/shop?a=1&b=2` → `{ a: '1', b: '2' }`
+
+## 정리
+
+| 최적화 기법 | 효과 |
+|-----------|------|
+| Image 컴포넌트 | 자동 최적화, layout shift 방지 |
+| Metadata | SEO 개선 |
+| next/dynamic | 초기 번들 크기 감소 |
+| content-visibility | 긴 리스트 렌더링 최적화 |
+| 서드파티 지연 로드 | TTI 개선 |
+| cookies | 세션 기반 인증 관리 |

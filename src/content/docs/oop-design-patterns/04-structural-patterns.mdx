@@ -1,0 +1,385 @@
+---
+title: "구조 패턴"
+description: "Bridge, Composite, Decorator, Facade - GoF 구조 패턴을 TypeScript로 구현하고 실전 활용법을 알아봅니다."
+sidebar:
+  order: 4
+---
+
+구조 패턴은 클래스와 객체를 더 큰 구조로 조합하면서도 유연하고 효율적으로 유지하는 방법을 다룹니다. 이 글에서는 Bridge, Composite, Decorator, Facade 패턴을 살펴봅니다.
+
+## Bridge Pattern
+
+추상화와 구현을 **분리**하여 각각 독립적으로 변형할 수 있도록 하는 패턴입니다.
+
+```typescript
+// 구현 계층
+interface MediaPlayerImplementation {
+  playAudio(): void;
+  playVideo(): void;
+}
+
+class WindowsMediaPlayer implements MediaPlayerImplementation {
+  playAudio(): void { console.log("Windows audio"); }
+  playVideo(): void { console.log("Windows video"); }
+}
+
+class MacMediaPlayer implements MediaPlayerImplementation {
+  playAudio(): void { console.log("Mac audio"); }
+  playVideo(): void { console.log("Mac video"); }
+}
+
+// 추상화 계층
+abstract class MediaPlayerAbstraction {
+  constructor(protected implementation: MediaPlayerImplementation) {}
+  abstract playFile(): void;
+}
+
+class AudioPlayer extends MediaPlayerAbstraction {
+  playFile(): void { this.implementation.playAudio(); }
+}
+
+class VideoPlayer extends MediaPlayerAbstraction {
+  playFile(): void { this.implementation.playVideo(); }
+}
+
+// 클라이언트 - 조합 자유
+const windowAudio = new AudioPlayer(new WindowsMediaPlayer());
+windowAudio.playFile(); // "Windows audio"
+
+const macVideo = new VideoPlayer(new MacMediaPlayer());
+macVideo.playFile(); // "Mac video"
+```
+
+### 실전: 데이터베이스 서비스
+
+```typescript
+interface Database {
+  connect(): void;
+  query(sql: string): void;
+  close(): void;
+}
+
+class PostgreSQLDatabase implements Database {
+  connect(): void { console.log("PostgreSQL connected"); }
+  query(sql: string) { console.log("execute query " + sql); }
+  close(): void { console.log("PostgreSQL closed"); }
+}
+
+class MongoDBDatabase implements Database {
+  connect(): void { console.log("MongoDB connected"); }
+  query(sql: string) { console.log("execute query " + sql); }
+  close(): void { console.log("MongoDB closed"); }
+}
+
+abstract class DatabaseService {
+  constructor(protected database: Database) {}
+  abstract fetchData(query: string): any;
+}
+
+class ClientDatabaseService extends DatabaseService {
+  fetchData(query: string) {
+    this.database.connect();
+    this.database.query(query);
+    this.database.close();
+  }
+}
+
+// 데이터베이스만 교체하면 됨
+const mongoService = new ClientDatabaseService(new MongoDBDatabase());
+mongoService.fetchData("SELECT * FROM users");
+
+const pgService = new ClientDatabaseService(new PostgreSQLDatabase());
+pgService.fetchData("SELECT * FROM users");
+```
+
+### 사용 시기
+
+- 구현과 추상의 확장 가능성이 중요할 때
+- 두 계층이 독립적으로 변경될 가능성이 높을 때
+- Cross-platform 앱, 다양한 데이터베이스 시스템 지원 시
+
+### 장단점
+
+**장점**: interface와 abstract 클래스의 분리, 코드 변경 시 interface 수정 불필요, 런타임 바인딩 가능
+
+**단점**: 과도한 엔지니어링 위험, 설계 어려움
+
+## Composite Pattern
+
+객체를 **트리 구조**로 구성하여 단일 객체와 복합 객체를 동일하게 취급합니다. Component, Leaf, Composite로 구성됩니다.
+
+- **Component**: 공통 인터페이스. Leaf와 Composite이 동일한 방식으로 처리됨
+- **Leaf**: 트리의 말단 노드
+- **Composite**: 하위 요소를 포함하는 복합 객체
+
+### 파일 시스템 예시
+
+```typescript
+interface FileSystemComponent {
+  getName(): string;
+  getSize(): number;
+}
+
+// Leaf
+class FileSys implements FileSystemComponent {
+  constructor(private name: string, private size: number) {}
+  getName(): string { return this.name; }
+  getSize(): number { return this.size; }
+}
+
+// Composite
+interface CompositeFileSystemComponent extends FileSystemComponent {
+  addComponent(component: FileSystemComponent): void;
+  removeComponent(component: FileSystemComponent): void;
+  getComponents(): FileSystemComponent[];
+}
+
+class Folder implements CompositeFileSystemComponent {
+  constructor(
+    private name: string,
+    private components: FileSystemComponent[] = []
+  ) {}
+
+  getName(): string { return this.name; }
+
+  getSize(): number {
+    if (this.components.length === 0) return 0;
+    return this.components.reduce(
+      (total, component) => component.getSize() + total, 0
+    );
+  }
+
+  addComponent(component: FileSystemComponent): void {
+    this.components.push(component);
+  }
+
+  removeComponent(component: FileSystemComponent): void {
+    const targetIdx = this.components.indexOf(component);
+    if (targetIdx !== -1) {
+      this.components.splice(targetIdx, 1);
+    }
+  }
+
+  getComponents(): FileSystemComponent[] {
+    return this.components;
+  }
+}
+
+const file1 = new FileSys("알고리즘1", 10);
+const file2 = new FileSys("알고리즘2", 20);
+const folder = new Folder("공부");
+
+folder.addComponent(file1);
+folder.addComponent(file2);
+folder.getSize(); // 30
+```
+
+### 장단점
+
+**장점**: 클라이언트 코드 단순화, 새 타입 추가 쉬움(`implements`로 바로 추가), 계층 구조 구현 용이
+
+**단점**: SRP 위반 가능성, 타입 체크 어려움, 컴포넌트 제한이 어려움
+
+> 객체 비교는 위험성이 크기 때문에, Lodash의 `isEqual` 같은 검증된 유틸을 사용하는 것이 안전합니다.
+
+## Decorator Pattern
+
+기존 클래스의 기능을 **수정하지 않고도 새로운 기능을 추가**하는 패턴입니다.
+
+### 커피 예시
+
+```typescript
+interface Coffee {
+  cost(): number;
+  description(): string;
+}
+
+class SimpleCoffee implements Coffee {
+  cost(): number { return 4500; }
+  description(): string { return "Simple Coffee"; }
+}
+
+abstract class CoffeeDecorator implements Coffee {
+  constructor(protected coffee: Coffee) {}
+  abstract cost(): number;
+  abstract description(): string;
+}
+
+class MilkDecorator extends CoffeeDecorator {
+  constructor(coffee: Coffee) { super(coffee); }
+  cost(): number { return this.coffee.cost() + 1000; }
+  description(): string { return "Milk " + this.coffee.description(); }
+}
+
+// 데코레이터를 겹겹이 적용
+let coffee: Coffee = new SimpleCoffee();
+coffee.cost(); // 4500
+
+coffee = new MilkDecorator(coffee);
+coffee.cost(); // 5500
+```
+
+### 실전: 서버 미들웨어
+
+```typescript
+interface ServerRequest {
+  handle(request: string): void;
+}
+
+class BaseServer implements ServerRequest {
+  handle(request: string): void {
+    console.log(`request: ${request}`);
+  }
+}
+
+abstract class ServerRequestDecorator implements ServerRequest {
+  constructor(protected serverRequest: ServerRequest) {}
+  abstract handle(request: string): void;
+}
+
+class LoggingMiddleware extends ServerRequestDecorator {
+  handle(request: string): void {
+    console.log(`[LOG] ${request}`);
+    this.serverRequest.handle(request);
+  }
+}
+
+class AuthMiddleware extends ServerRequestDecorator {
+  handle(request: string): void {
+    console.log(`[AUTH] ${request}`);
+    this.serverRequest.handle(request);
+  }
+}
+
+// 미들웨어를 레이어처럼 쌓기
+let server: ServerRequest = new BaseServer();
+server = new LoggingMiddleware(server);
+server = new AuthMiddleware(server);
+server.handle("GET /api/users");
+// [AUTH] GET /api/users
+// [LOG] GET /api/users
+// request: GET /api/users
+```
+
+### 사용 시기
+
+- 이미 생성된 객체의 동작을 변경할 때
+- 상속을 대체하고 런타임에서 수정하고 싶을 때
+- 객체에 기능을 동적으로 추가할 때
+
+## Facade Pattern
+
+복잡한 내부 메서드들을 감싸서 **하나의 간단한 인터페이스**로 통합합니다.
+
+### 커피 머신 예시
+
+```typescript
+class Grinder {
+  grindBeans(): void { console.log("Grinding beans..."); }
+}
+
+class Boiler {
+  boilWater(): void { console.log("Boiling water..."); }
+}
+
+class Brewer {
+  brewCoffee(): void { console.log("Brewing Coffee..."); }
+}
+
+class CoffeeMakerFacade {
+  constructor(
+    private grinder: Grinder,
+    private boiler: Boiler,
+    private brewer: Brewer
+  ) {}
+
+  makeCoffee() {
+    this.grinder.grindBeans();
+    this.boiler.boilWater();
+    this.brewer.brewCoffee();
+    console.log("Coffee is ready!");
+  }
+}
+
+const coffeeMaker = new CoffeeMakerFacade(
+  new Grinder(), new Boiler(), new Brewer()
+);
+
+coffeeMaker.makeCoffee();
+// "Grinding beans..."
+// "Boiling water..."
+// "Brewing Coffee..."
+// "Coffee is ready!"
+```
+
+### 실전: 홈 시어터 시스템
+
+```typescript
+class Amplifier {
+  turnOn(): void { console.log("Amplifier turned On"); }
+  setVolume(level: number): void { console.log(`Volume: ${level}`); }
+}
+
+class DvdPlayer {
+  turnOn(): void { console.log("DVD Player Turned on"); }
+  play(movie: string): void { console.log(`${movie} is playing`); }
+}
+
+class Projector {
+  turnOn(): void { console.log("Projector turned on"); }
+  setInput(dvdPlayer: DvdPlayer): void { console.log("DVD connected"); }
+}
+
+class Lights {
+  dim(level: number): void { console.log(`Light level: ${level}`); }
+}
+
+class HomeTheaterFacade {
+  constructor(
+    private amplifier: Amplifier,
+    private dvdPlayer: DvdPlayer,
+    private projector: Projector,
+    private light: Lights
+  ) {}
+
+  watchMovie(movie: string, volume: number, lightLevel: number): void {
+    this.light.dim(lightLevel);
+    this.amplifier.turnOn();
+    this.amplifier.setVolume(volume);
+    this.dvdPlayer.turnOn();
+    this.projector.turnOn();
+    this.projector.setInput(this.dvdPlayer);
+    this.dvdPlayer.play(movie);
+  }
+}
+
+const theater = new HomeTheaterFacade(
+  new Amplifier(), new DvdPlayer(), new Projector(), new Lights()
+);
+
+theater.watchMovie("Finding Dory", 3, 4);
+```
+
+### 장단점
+
+**장점**: 복잡한 코드를 숨기고 간단한 인터페이스 제공, 의존성 감소, 유지보수 용이
+
+**단점**: 과도한 추상화 위험, 제한된 확장성, 내부 동작이 숨겨져 클라이언트가 세부 사항을 알 수 없음
+
+### 활용 사례
+
+- **주문 시스템**: 재고 확인, 결제, 배송 시스템 통합
+- **계좌이체**: 유저 확인, 잔고 확인, 이체, 영수증 처리 통합
+
+> Facade 패턴은 함수형 프로그래밍의 함수 합성(pipe, compose)과 유사합니다. 작은 함수들을 조합하는 것과 작은 클래스들의 메서드를 하나로 묶는 것이 같은 맥락입니다.
+
+## 정리
+
+| 패턴 | 핵심 | 키워드 |
+|------|------|--------|
+| **Bridge** | 추상화와 구현 분리 | 독립적 변형, 플랫폼 독립 |
+| **Composite** | 트리 구조로 통일된 처리 | 단일/복합 동일 취급, 계층 구조 |
+| **Decorator** | 기존 객체에 기능 추가 | 레이어, 미들웨어, 런타임 확장 |
+| **Facade** | 복잡한 시스템 단순화 | 통합 인터페이스, 서브시스템 은닉 |
+
+함수형 프로그래밍과 OOP는 서로 다른 접근이지만, 결국 **복잡성을 관리하고 재사용성을 높이는** 같은 목표를 가지고 있습니다.

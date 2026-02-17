@@ -1,0 +1,165 @@
+---
+title: "Prototype 완전 이해"
+description: "JavaScript 프로토타입의 동작 원리, 프로토타입 체이닝, 생성자 함수와 class의 관계를 이해합니다."
+sidebar:
+  order: 1
+---
+
+JavaScript는 프로토타입 기반 언어입니다. 객체지향 프로그래밍의 상속을 프로토타입 체인으로 구현하며, class 문법도 내부적으로는 프로토타입 위에서 동작합니다.
+
+## Prototype 기본 개념
+
+모든 객체에는 숨김 프로퍼티 `[[Prototype]]`이 있습니다. 이 값은 `null`이거나 다른 객체에 대한 참조인데, 다른 객체를 참조할 경우 그 대상을 **프로토타입**이라고 부릅니다.
+
+```javascript
+const animal = { eats: true };
+const rabbit = { jumps: true };
+
+rabbit.__proto__ = animal;
+console.log(rabbit.eats); // true (프로토타입 체인으로 접근)
+```
+
+현재는 `__proto__` 대신 `Object.getPrototypeOf()`와 `Object.setPrototypeOf()`를 사용합니다.
+
+### 프로토타입의 규칙
+
+- 순환 참조는 불가능
+- `null`이나 객체만 가능하며, 다른 자료형은 무시
+- 하나의 `[[Prototype]]`만 존재
+
+### 프로토타입은 읽기 전용
+
+프로토타입 체인을 통해 값을 읽을 수는 있지만, setter를 통해 값을 변경하면 현재 객체에만 영향을 줍니다.
+
+```javascript
+let user = {
+  firstName: "john",
+  set fullName(value) {
+    [this.firstName, this.lastName] = value.split(" ");
+  },
+  get fullName() {
+    return `${this.firstName} ${this.lastName}`;
+  },
+};
+
+let admin = { __proto__: user, isAdmin: true };
+
+admin.fullName = "james hogan";
+console.log(admin.fullName); // "james hogan"
+console.log(user.fullName);  // "john Smith" (변경되지 않음)
+```
+
+### this는 호출 시점에 결정
+
+프로토타입 메서드 내의 `this`는 프로토타입 객체가 아니라, **호출한 객체**를 가리킵니다.
+
+```javascript
+const user = {
+  name: "user1",
+  log() { console.log(this); },
+};
+const admin = { __proto__: user, isAdmin: true };
+
+admin.log(); // admin 객체
+user.log();  // user 객체
+```
+
+### 열거 가능한 속성
+
+`for...in`은 프로토타입 프로퍼티까지 모두 열거합니다. 자신의 프로퍼티만 확인하려면 `Object.hasOwn()` 또는 `Object.keys()`를 사용하세요.
+
+## 생성자 함수와 new 키워드
+
+```javascript
+function User(name, id) {
+  this.name = name;
+  this.id = id;
+}
+
+const user1 = new User("Some", "some@some.com");
+```
+
+`new` 키워드의 동작 과정:
+1. 빈 객체 생성
+2. `this`에 빈 객체 할당
+3. 프로퍼티 할당
+4. 생성된 객체를 반환 (이것이 **인스턴스**)
+
+`new` 없이 호출하면 일반 함수처럼 실행되어 `undefined`를 반환하고, `this`가 전역 객체(`window`)를 가리키게 됩니다.
+
+## 생성자 함수의 문제점
+
+```javascript
+function Dog(name) {
+  this.name = name;
+  this.bark = function() { return "bark"; };
+}
+
+const dog1 = new Dog("1");
+const dog2 = new Dog("2");
+console.log(dog1.bark === dog2.bark); // false! 각각 별도의 함수
+```
+
+각 인스턴스마다 함수가 개별적으로 생성되어 메모리가 낭비됩니다.
+
+### 해결: 프로토타입에 메서드 등록
+
+```javascript
+function Dog(name) {
+  this.name = name;
+}
+
+Dog.prototype.bark = function() { return "bark"; };
+Dog.prototype.walk = function() { return "walk"; };
+
+const dog1 = new Dog("1");
+const dog2 = new Dog("2");
+console.log(dog1.bark === dog2.bark); // true (같은 함수 참조)
+```
+
+## Class 문법
+
+class를 사용하면 생성자 함수와 프로토타입 설정을 한 곳에서 처리할 수 있습니다.
+
+```javascript
+class Dog {
+  constructor(name) {
+    this.name = name;
+  }
+  bark() { return "bark"; }
+  walk() { return "walk"; }
+}
+
+const dog1 = new Dog("1");
+const dog2 = new Dog("2");
+console.log(dog1.bark === dog2.bark); // true
+```
+
+class 안에서 선언한 메서드는 자동으로 prototype에 등록됩니다. class는 프로토타입의 syntactic sugar입니다.
+
+## 프로토타입 메서드
+
+### Object.create()
+
+인자를 프로토타입으로 가진 새 객체를 생성합니다. class가 없던 시절의 상속 구현 방법입니다.
+
+```javascript
+function Vehicle(name, speed) {
+  this.name = name;
+  this.speed = speed;
+}
+Vehicle.prototype.run = function() { return "run"; };
+
+function LightCar(name, speed) {
+  Vehicle.apply(this, arguments);
+}
+LightCar.prototype = Object.create(Vehicle.prototype);
+LightCar.prototype.constructor = LightCar;
+```
+
+`extends`의 존재만으로도 감사해지는 코드입니다.
+
+### Object.getPrototypeOf() / Object.setPrototypeOf()
+
+- `getPrototypeOf()`: 객체의 프로토타입을 반환
+- `setPrototypeOf()`: 객체의 프로토타입을 교체

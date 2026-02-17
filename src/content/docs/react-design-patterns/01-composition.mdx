@@ -1,0 +1,74 @@
+---
+title: "컴포지션으로 시작하는 React 설계"
+description: "디자인 패턴의 기초가 되는 컴포지션과 프로젝트 구조 설계를 알아봅니다."
+sidebar:
+  order: 1
+---
+
+React 디자인 패턴 시리즈의 첫 번째 글입니다. 디자인 패턴이란 무엇인지, 그리고 React에서 가장 기본이 되는 컴포지션(Composition) 패턴과 프로젝트 아키텍처 구조를 살펴봅니다.
+
+## 디자인 패턴이란?
+
+디자인 패턴은 개발 중 마주하는 문제에 대한 검증된 해결책입니다. 정답이라고 할 수는 없지만, 반복되는 문제에 빠르게 대응할 수 있는 가이드 역할을 합니다.
+
+## 컴포지션 패턴
+
+컴포지션은 작은 단위의 컴포넌트를 조합하여 더 큰 컴포넌트를 만드는 패턴입니다. 함수형 프로그래밍에서 low-level 함수를 조합해 재사용하는 것과 비슷한 개념입니다.
+
+```tsx
+interface Props {
+  size: "small" | "medium" | "large";
+  color: string;
+  text: string;
+}
+
+export const Buttons = ({ size, color, text, ...props }: Props) => {
+  return (
+    <button
+      {...props}
+      style={{
+        fontSize:
+          size === "small" ? "8px" : size === "medium" ? "16px" : "32px",
+        background: color,
+      }}
+    >
+      {text}
+    </button>
+  );
+};
+
+export const RedButton = (props: Omit<Props, "color">) => {
+  return <Buttons {...props} color="crimson" />;
+};
+
+export const GreenSmallButton = (props: Omit<Props, "color" | "size">) => {
+  return <Buttons {...props} color="green" size="small" />;
+};
+```
+
+기본이 되는 `Buttons` 컴포넌트를 만든 뒤, `RedButton`이나 `GreenSmallButton`처럼 특정 속성을 고정한 변형 컴포넌트를 만들 수 있습니다. TypeScript를 함께 사용할 경우 `Omit` 같은 유틸리티 타입으로 이미 고정된 props를 제거해줘야 합니다.
+
+## 프로젝트 아키텍처 구조
+
+React 프로젝트에서 자주 사용되는 디렉토리 구조입니다.
+
+```
+src
+ ├── api          # API 요청, 서버 통신 관련
+ ├── assets       # 정적 자원 (이미지, 폰트 등)
+ ├── components   # 공통 컴포넌트 및 특정 페이지 전용 컴포넌트
+ ├── config       # 설정 파일 (Firebase, 환경 변수 등)
+ ├── constants    # 상수 값
+ ├── context      # Context API 관련 (렌더링 최적화를 위해 분리 필요)
+ ├── helpers      # 유틸리티 함수 (날짜, 시간 포맷 등)
+ ├── hooks        # Custom Hook (재사용 가능한 것만 분리)
+ ├── intl         # 다국어 지원 (옵셔널)
+ ├── layout       # 레이아웃 컴포넌트 (로그인/로그아웃에 따른 분기 등)
+ ├── services     # 비즈니스 로직
+ ├── store        # 전역 상태 관리 라이브러리 관련
+ ├── styles       # 글로벌 스타일
+ ├── types        # TypeScript 타입 정의
+ └── views        # 페이지 루트 컴포넌트
+```
+
+Custom Hook은 재사용 가능한 것만 `hooks/` 디렉토리로 분리하고, 특정 컴포넌트에 강하게 의존하는 훅은 해당 컴포넌트와 같은 위치에 두는 것이 좋습니다. 이렇게 하면 관련 코드를 한 곳에서 관리할 수 있어 유지보수가 쉬워집니다.

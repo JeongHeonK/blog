@@ -1,0 +1,222 @@
+---
+title: "Container/Presenter 패턴과 데이터 로딩"
+description: "데이터 로딩 컴포넌트를 통해 관심사 분리를 구현하는 Container/Presenter 패턴을 알아봅니다."
+sidebar:
+  order: 2
+---
+
+Container/Presenter 패턴은 데이터 로직(Container)과 UI 렌더링(Presenter)을 분리하는 패턴입니다. 이 글에서는 데이터 로딩 컴포넌트의 발전 과정을 통해 이 패턴을 이해합니다.
+
+## CurrentUserLoader: 기본적인 데이터 로딩
+
+가장 단순한 형태의 데이터 로딩 컴포넌트입니다. `React.Children` API를 사용하여 children에 데이터를 주입합니다.
+
+```tsx
+import React, { ReactNode, useEffect, useState } from "react";
+import axios from "axios";
+
+type Props = {
+  children: ReactNode;
+};
+
+export const CurrentUserLoader = ({ children }: Props) => {
+  const [user, setUser] = useState<object>({});
+
+  useEffect(() => {
+    (async () => {
+      const response = await axios.get("someUrl");
+      setUser(response.data);
+    })();
+  }, []);
+
+  return (
+    <>
+      {React.Children.map(children, (child) => {
+        if (React.isValidElement(child)) {
+          return React.cloneElement(child, user);
+        }
+        return child;
+      })}
+    </>
+  );
+};
+```
+
+`React.Children.map`과 `React.cloneElement`를 활용하면 children으로 받은 JSX를 조작하고 props를 주입할 수 있습니다.
+
+## UserLoader: userId를 외부에서 받는 형태
+
+특정 사용자 데이터를 로드하기 위해 `userId`를 props로 받도록 확장합니다.
+
+```tsx
+type Props = {
+  userId: string;
+  children: ReactNode;
+};
+
+export const UserLoader = ({ userId, children }: Props) => {
+  const [user, setUser] = useState<object>({});
+
+  useEffect(() => {
+    (async () => {
+      const response = await axios.get(`someUrl/${userId}`);
+      setUser(response.data);
+    })();
+  }, [userId]);
+
+  return (
+    <>
+      {React.Children.map(children, (child) => {
+        if (React.isValidElement(child)) {
+          return React.cloneElement(child, user);
+        }
+        return child;
+      })}
+    </>
+  );
+};
+```
+
+## DataSourceLoader: 범용 데이터 로딩
+
+데이터 소스를 함수로 받아 어떤 종류의 데이터든 로드할 수 있도록 일반화합니다.
+
+```tsx
+type GetData = <T>(url: string) => Promise<T>;
+
+type Props = {
+  getData: GetData;
+  resourceName: string;
+  children: ReactNode;
+};
+
+export const DataSourceLoader = ({
+  getData,
+  resourceName,
+  children,
+}: Props) => {
+  const [resource, setResource] = useState<object>({});
+
+  useEffect(() => {
+    (async () => {
+      const data = (await getData(resourceName)) as object;
+      setResource(data);
+    })();
+  }, [getData, resourceName]);
+
+  return (
+    <>
+      {React.Children.map(children, (child) => {
+        if (React.isValidElement(child) && resourceName) {
+          return React.cloneElement(child, { [resourceName]: resource });
+        }
+        return child;
+      })}
+    </>
+  );
+};
+```
+
+사용 예시:
+
+```tsx
+const getDataFromServer = async (url: string) => {
+  const response = await axios.get(url);
+  return response.data;
+};
+
+function App() {
+  return (
+    <DataSourceLoader
+      getData={() => getDataFromServer("someUrl")}
+      resourceName="user"
+    >
+      <UserInfo user={{ name: "hey", age: 30, country: "ja", books: [] }} />
+    </DataSourceLoader>
+  );
+}
+```
+
+## DataSourceWithRender: Render Props 패턴
+
+기존 패턴은 데이터가 어디서 주입되는지 추적이 어렵습니다. `render` 함수를 사용하면 데이터 흐름이 명확해집니다.
+
+```tsx
+type Props = {
+  getData: <T>() => Promise<T>;
+  render: (resource: User["user"]) => JSX.Element;
+};
+
+export const DataSourceWithRender = ({ getData, render }: Props) => {
+  const [resource, setResource] = useState<User["user"]>();
+
+  useEffect(() => {
+    (async () => {
+      const data = await getData<User["user"]>();
+      setResource(data);
+    })();
+  }, [getData]);
+
+  if (resource) {
+    return render(resource);
+  }
+  return null;
+};
+```
+
+사용 예시:
+
+```tsx
+function App() {
+  return (
+    <DataSourceWithRender
+      getData={() => getDataFromServer("someUrl")}
+      render={(resource) => <UserInfo user={resource} />}
+    />
+  );
+}
+```
+
+## ResourceLoader: 경로 기반 데이터 로딩
+
+URL 경로와 리소스 이름을 받아 데이터를 로딩하는 패턴입니다.
+
+```tsx
+type Props = {
+  resourcePath: string;
+  resourceName?: string;
+  children: ReactNode;
+};
+
+export const ResourceLoader = ({
+  resourcePath,
+  resourceName,
+  children,
+}: Props) => {
+  const [resource, setResource] = useState<object>({});
+
+  useEffect(() => {
+    (async () => {
+      const response = await axios.get(`someUrl/${resourcePath}`);
+      setResource(response.data);
+    })();
+  }, [resourcePath]);
+
+  return (
+    <>
+      {React.Children.map(children, (child) => {
+        if (React.isValidElement(child) && resourceName) {
+          return React.cloneElement(child, { [resourceName]: resource });
+        }
+        return child;
+      })}
+    </>
+  );
+};
+```
+
+## 정리
+
+Container/Presenter 패턴은 데이터 로딩 로직과 UI를 분리하여 각각 독립적으로 관리할 수 있게 합니다. `CurrentUserLoader` → `UserLoader` → `DataSourceLoader` → `DataSourceWithRender`로의 발전 과정을 보면, 점점 더 범용적이고 데이터 흐름이 명확한 방향으로 진화하는 것을 알 수 있습니다.
+
+현대 React에서는 이러한 패턴보다 Custom Hook이나 TanStack Query 같은 도구를 더 많이 사용하지만, 패턴의 핵심인 **관심사 분리** 원칙은 여전히 유효합니다.

@@ -1,0 +1,221 @@
+---
+title: "Context API 실전 활용"
+description: "Context API의 렌더링 최적화 전략과 useReducer를 활용한 패턴을 다룹니다."
+sidebar:
+  order: 8
+---
+
+Context API는 prop drilling을 방지하면서 하위 컴포넌트에 데이터를 전달할 수 있는 React의 내장 기능입니다. 이 글에서는 기본 사용법부터 렌더링 최적화까지 깊이 있게 다룹니다.
+
+## 기본 사용법
+
+```tsx
+const Context = React.createContext({
+  collapsed: false,
+  toggle: () => {},
+});
+
+const useNav = () => useContext(Context);
+
+const NavController = ({ children }: { children: ReactNode }) => {
+  const [collapsed, setCollapsed] = useState(false);
+  const toggle = () => setCollapsed(!collapsed);
+
+  return (
+    <Context.Provider value={{ collapsed, toggle }}>
+      {children}
+    </Context.Provider>
+  );
+};
+```
+
+Context를 구독하는 컴포넌트만 리렌더링이 발생합니다. 그러나 여기에 함정이 있습니다.
+
+## 문제점: 불필요한 리렌더링
+
+Context를 구독하는 컴포넌트라면, **사용하지 않는 값이 변경되더라도** 리렌더링이 발생합니다. 예를 들어 `toggle()` 함수만 사용하는 컴포넌트도 `collapsed` 상태가 바뀌면 리렌더링됩니다.
+
+## 해결 1: Memoization
+
+```tsx
+const NavController = ({ children }: { children: ReactNode }) => {
+  const [collapsed, setCollapsed] = useState(false);
+  const toggle = useCallback(() => setCollapsed(!collapsed), [collapsed]);
+
+  const value = useMemo(() => ({
+    collapsed,
+    toggle,
+  }), [collapsed, toggle]);
+
+  return <Context.Provider value={value}>{children}</Context.Provider>;
+};
+```
+
+`useMemo`로 value 객체를 캐싱하면 불필요한 리렌더링을 줄일 수 있습니다. 하지만 `collapsed`가 바뀌면 `toggle`도 재생성되고, 결국 `toggle`만 사용하는 컴포넌트도 리렌더링됩니다.
+
+## 해결 2: Context 분리
+
+데이터 Context와 API(함수) Context를 분리합니다.
+
+```tsx
+const ContextData = React.createContext({ collapsed: false });
+const ContextApi = React.createContext({ toggle: () => {} });
+
+const useNavData = () => useContext(ContextData);
+const useNavApi = () => useContext(ContextApi);
+
+const NavController = ({ children }: { children: ReactNode }) => {
+  const [collapsed, setCollapsed] = useState(false);
+  const toggle = useCallback(() => setCollapsed((prev) => !prev), []);
+
+  return (
+    <ContextData.Provider value={{ collapsed }}>
+      <ContextApi.Provider value={{ toggle }}>
+        {children}
+      </ContextApi.Provider>
+    </ContextData.Provider>
+  );
+};
+```
+
+`useCallback` 내부에서 함수형 업데이트 `(prev) => !prev`를 사용하면 `collapsed`에 대한 의존성을 제거할 수 있어, `toggle` 함수가 재생성되지 않습니다.
+
+## useReducer와 함께 사용하기
+
+### 기본 패턴
+
+```tsx
+type State = { count: number };
+type Action = { type: "INCREMENT" | "DECREMENT" };
+
+function reducer(state: State, action: Action) {
+  switch (action.type) {
+    case "INCREMENT":
+      return { count: state.count + 1 };
+    case "DECREMENT":
+      return { count: state.count - 1 };
+    default:
+      throw new Error("Provide a valid action.");
+  }
+}
+
+export const Context = createContext<CartContext | null>(null);
+
+export const CartProvider = ({ children }: { children: ReactNode }) => {
+  const [state, dispatch] = useReducer(reducer, { count: 0 });
+  return (
+    <Context.Provider value={{ state, dispatch }}>
+      {children}
+    </Context.Provider>
+  );
+};
+
+export function useCartContext() {
+  const value = useContext(Context);
+  if (value === null) {
+    throw new Error("Must be inside Context.Provider");
+  }
+  return value;
+}
+```
+
+### State/Dispatch Context 분리
+
+Context가 하나로 통합되면 `dispatch`만 사용해도 `state` 변경 시 리렌더링됩니다. 이를 분리하면 해결됩니다.
+
+```tsx
+export const StateContext = createContext<CartStateContext | null>(null);
+export const DispatchContext = createContext<CartDispatchContext | null>(null);
+
+export const CartProvider = ({ children }: { children: ReactNode }) => {
+  const [state, dispatch] = useReducer(reducer, { count: 0 });
+
+  return (
+    <StateContext.Provider value={{ state }}>
+      <DispatchContext.Provider value={{ dispatch }}>
+        {children}
+      </DispatchContext.Provider>
+    </StateContext.Provider>
+  );
+};
+```
+
+`useReducer`의 `dispatch`는 React가 안정적인 참조를 보장하므로, dispatch Context를 분리하면 별도의 memoization 없이도 안전하게 사용할 수 있습니다.
+
+## useReducer로 Context 분리 최적화
+
+`useState`로 toggle을 구현하면 setter 함수가 state에 의존하게 됩니다.
+
+```javascript
+const [state, setState] = useState(false);
+const toggle = useCallback(() => setState(!state), [state]);
+// state가 바뀔 때마다 toggle도 재생성됨
+```
+
+`useReducer`를 사용하면 `dispatch`의 안정적인 참조 덕분에 의존성을 완전히 제거할 수 있습니다.
+
+```tsx
+const NavController = ({ children }: { children: ReactNode }) => {
+  const [state, dispatch] = useReducer(reducer, defaultState);
+
+  const data = useMemo(() => ({ collapsed: state.collapsed }), [state]);
+
+  const api = useMemo(() => ({
+    open: () => dispatch({ type: "open" }),
+    close: () => dispatch({ type: "close" }),
+    toggle: () => dispatch({ type: "toggle" }),
+  }), []); // 의존성 배열이 비어있음!
+
+  return (
+    <ContextData.Provider value={data}>
+      <ContextApi.Provider value={api}>
+        {children}
+      </ContextApi.Provider>
+    </ContextData.Provider>
+  );
+};
+```
+
+## Generic 타입과 Context
+
+useReducer의 Action 타입을 제네릭으로 만들면 반복적인 타입 정의를 줄일 수 있습니다.
+
+```typescript
+type Book = {
+  author: string;
+  title: string;
+  price: number;
+};
+
+type Actions<T, K extends keyof T> = {
+  type: `update-${K & string}`;
+  payload: T[K];
+};
+
+type UpdatePriceAction = Actions<Book, "price">;
+// { type: "update-price"; payload: number }
+```
+
+## 파생 상태 구독 주의
+
+Context의 연속적인 값(숫자, 문자열)을 구독하면 값이 바뀔 때마다 리렌더링됩니다. 실제로 필요한 것이 파생된 boolean 값이라면 해당 boolean만 구독하도록 분리하는 것이 좋습니다.
+
+```tsx
+// 안티패턴: width가 바뀔 때마다 리렌더링
+function Sidebar() {
+  const { width } = useAppContext();
+  const isMobile = width < 768;
+  return <nav className={isMobile ? "mobile" : "desktop"} />;
+}
+
+// 올바른 패턴: boolean 전환 시에만 리렌더링
+function Sidebar() {
+  const isMobile = useMediaQuery("(max-width: 767px)");
+  return <nav className={isMobile ? "mobile" : "desktop"} />;
+}
+```
+
+## Next.js에서의 Context 주의점
+
+- Server Component에서는 Context를 사용할 수 없으므로 Provider는 반드시 Client Component로 분리해야 합니다
+- RSC 경계에서 Context value로 전달되는 데이터는 직렬화되므로, 클라이언트에서 실제 사용하는 필드만 전달하는 것이 성능상 유리합니다

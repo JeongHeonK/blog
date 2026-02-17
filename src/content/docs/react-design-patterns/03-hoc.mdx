@@ -1,0 +1,179 @@
+---
+title: "HOC 패턴: 횡단 관심사를 우아하게"
+description: "Higher-Order Component 패턴으로 인증, 데이터 로딩, 로깅 등 횡단 관심사를 처리하는 방법을 알아봅니다."
+sidebar:
+  order: 3
+---
+
+고차 컴포넌트(Higher-Order Component, HOC)는 컴포넌트를 인자로 받아 새로운 컴포넌트를 반환하는 함수입니다. 기존 코드를 수정하지 않고 새로운 기능을 확장할 수 있는 강력한 패턴입니다.
+
+## HOC의 장점
+
+- 기존 코드 수정 없이 기능을 확장할 수 있다
+- 공통 로직을 공유하는 새로운 컴포넌트를 만들 수 있다
+- 코드 변경 없이 새로운 로직을 추가할 수 있다
+
+## 기본 예시: 인증 확인
+
+로그인 여부에 따라 다른 화면을 보여주는 HOC입니다.
+
+```jsx
+import React, { useEffect, useState } from "react";
+import { auth } from "./auth";
+
+const withAuthentication = (WrappedComponent) => {
+  const AuthenticatedComponent = (props) => {
+    const [isAuthenticated, setIsAuthenticated] = useState(false);
+
+    useEffect(() => {
+      (async () => {
+        const isLogin = await auth.isAuthenticated();
+        setIsAuthenticated(isLogin);
+      })();
+    }, []);
+
+    return isAuthenticated ? (
+      <WrappedComponent {...props} />
+    ) : (
+      <div>로그인이 필요합니다.</div>
+    );
+  };
+
+  return AuthenticatedComponent;
+};
+```
+
+## Props 주입 HOC
+
+```jsx
+const withExtraProp = (WrappedComponent) => {
+  const ComponentWithExtraProp = (props) => {
+    const newProps = {
+      extraProp: "추가적인 props",
+      ...props,
+    };
+    return <WrappedComponent {...newProps} />;
+  };
+  return ComponentWithExtraProp;
+};
+
+// 사용
+const MyComponent = (props) => {
+  return <div>{props.extraProp}</div>;
+};
+
+export default withExtraProp(MyComponent);
+```
+
+## 데이터 로딩 HOC
+
+사용자 데이터를 로드하여 컴포넌트에 주입하는 HOC입니다.
+
+```tsx
+import axios from "axios";
+import { useState, useEffect, ComponentType } from "react";
+
+export const includeUser = (Component: ComponentType<any>, userId: string) => {
+  return (props: object) => {
+    const [user, setUser] = useState<object>();
+
+    useEffect(() => {
+      (async () => {
+        const data = await axios.get(`someURL/${userId}`);
+        setUser(data);
+      })();
+    });
+
+    return <Component {...props} user={user} />;
+  };
+};
+```
+
+사용 예시:
+
+```tsx
+const UserInfoWithLoader = includeUser(UserInfo, "1123");
+
+function App() {
+  return (
+    <main>
+      <UserInfoWithLoader />
+    </main>
+  );
+}
+```
+
+`React.Children`을 사용하는 Container 패턴보다 가독성이 훨씬 좋습니다. 데이터를 어디서 주입받는지 명확하게 드러나기 때문입니다.
+
+## 데이터 수정까지 포함한 HOC
+
+데이터 로딩뿐만 아니라 수정, 저장, 리셋까지 포함하는 HOC입니다.
+
+```tsx
+export const includeUpdatableUser = (
+  Component: ComponentType<any>,
+  userId: string
+) => {
+  return (props: any) => {
+    const [initialUser, setInitialUser] = useState<object>();
+    const [user, setUser] = useState<object>();
+
+    useEffect(() => {
+      (async () => {
+        const response = await axios.get(`someURL/${userId}`);
+        setInitialUser(response?.data);
+      })();
+    }, []);
+
+    const onChangeUser = (updates: object) => {
+      setUser({ ...user, ...updates });
+    };
+
+    const onPostUser = async () => {
+      const response = await axios.post(`someURL/${userId}`, { user });
+      setInitialUser(response.data);
+      setUser(response.data);
+    };
+
+    const onResetUser = () => {
+      setUser(initialUser);
+    };
+
+    return (
+      <Component
+        {...props}
+        user={user}
+        onChange={onChangeUser}
+        onPost={onPostUser}
+        onReset={onResetUser}
+      />
+    );
+  };
+};
+```
+
+## Props 로깅 HOC
+
+디버깅 용도로 컴포넌트에 전달되는 props를 로깅하는 HOC입니다. HOC는 JSX로 사용하지 않으므로 카멜 케이스로 작성합니다.
+
+```tsx
+export const logProps = (Component: ComponentType<any>) => {
+  return (props: any) => {
+    console.log(props);
+    return <Component {...props} />;
+  };
+};
+```
+
+## HOC vs Custom Hook 비교
+
+| 항목 | Custom Hook | HOC |
+|------|------------|-----|
+| 대상 | 로직 재사용 (UI 독립적) | 컴포넌트 재사용 (UI와 관련) |
+| 결과물 | 상태와 로직 반환 | 새로운 컴포넌트 반환 |
+| 사용 방식 | 훅을 호출 | 컴포넌트를 래핑 |
+| 주요 목적 | 상태 관리와 비즈니스 로직 캡슐화 | 컴포넌트 동작 확장 및 결과 변형 |
+
+Custom Hook만으로 분리하면 하나의 훅이 비대해지는 부작용이 생길 수 있습니다. HOC를 함께 사용하면 책임과 역할을 분리하면서 이런 문제를 방지할 수 있습니다.
+
+다만 실무에서는 Custom Hook이 훨씬 간편하고 직관적이기 때문에 더 자주 사용됩니다. HOC는 인증 체크, 에러 바운더리 래핑, 로깅 같은 **횡단 관심사**에서 여전히 유용합니다.

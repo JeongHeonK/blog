@@ -1,0 +1,252 @@
+---
+title: "Currying과 함수 합성"
+description: "커링을 통한 부분 적용과 compose/pipe를 활용한 함수 합성 패턴을 깊이 있게 다룹니다."
+sidebar:
+  order: 3
+---
+
+함수형 프로그래밍에서 작은 함수들을 조합하여 더 큰 함수를 만드는 것은 핵심 원칙 중 하나입니다. 이 글에서는 커링(Currying)과 함수 합성(Function Composition)을 통해 함수를 조합하는 방법을 알아봅니다.
+
+## 함수 합성 (Function Composition)
+
+함수를 조합해서 새로운 함수를 만들거나 계산하는 것입니다.
+
+### 함수형 프로그래밍에서 함수의 조건
+
+- 입력이 있다
+- 출력이 있다
+- 하나의 일만 수행한다
+- 순수 함수다 → 재사용성이 좋다
+
+### 중첩 호출의 문제
+
+```javascript
+console.log(filterArticles(breakout(capitalize(noPunct(trim(someString))))));
+```
+
+코드 실행 순서가 읽는 방향과 반대이며, 중첩되어 가독성이 매우 떨어집니다. 콜백 지옥을 유발할 가능성도 있습니다.
+
+### compose 함수
+
+`compose`는 함수들을 **오른쪽에서 왼쪽**으로 합성합니다:
+
+```javascript
+const compose = (...fns) => {
+  return (value) => fns.reduceRight((v, f) => f(v), value);
+};
+
+const prepareString = compose(
+  filterArticles,
+  breakout,
+  capitalize,
+  noPunct,
+  trim
+);
+
+const result = prepareString(someString);
+```
+
+### pipe 함수
+
+`pipe`는 함수들을 **왼쪽에서 오른쪽**으로 합성합니다. 가독성 면에서 `compose`보다 직관적입니다:
+
+```typescript
+type Func<T = any, R = any> = (arg: T) => R;
+
+const pipe = (...fns: Func[]) => {
+  return (x: any) => fns.reduce((v, fn) => fn(v), x);
+};
+```
+
+### pipe 활용 실습
+
+```javascript
+const scores = [50, 6, 100, 0, 10, 75, 8, 60, 90, 80, 0, 30, 110];
+
+const boostSingleScores = (arr) =>
+  arr.map((val) => (val < 10 ? val * 10 : val));
+
+const rmOverScores = (arr) => arr.filter((val) => val <= 100);
+
+const rmZeroScores = (arr) => arr.filter((val) => val > 0);
+
+const scoresSum = (arr) => arr.reduce((sum, val) => sum + val, 0);
+
+const getAverage = (arr) => scoresSum(arr) / arr.length;
+
+// 작은 함수들을 조합하여 새로운 함수 생성
+const rmBothHighLow = pipe(rmZeroScores, rmOverScores);
+const getTotalSum = pipe(boostSingleScores, rmBothHighLow, scoresSum);
+const average = pipe(boostSingleScores, rmBothHighLow, getAverage)(scores);
+```
+
+### 실전: React Provider 합성
+
+`reduceRight`는 React에서 중첩된 Provider들을 정리할 때도 활용할 수 있습니다:
+
+```jsx
+const CustomQueryProvider = ({ children, Components }) => {
+  return (
+    <QueryProviders>
+      {Components.reduceRight((child, Component) => {
+        return createElement(Component, null, child);
+      }, children)}
+      <DevTools />
+    </QueryProviders>
+  );
+};
+
+// 사용
+<CustomQueryProvider
+  Components={[SessionProvider, ToastProvider, CountProvider, GNB]}
+>
+  {children}
+</CustomQueryProvider>
+```
+
+최상단에서 `QueryProvider`가 감싸고, 그 내부에 Custom Provider들이 순서대로 전달된다는 의도를 명확히 표현할 수 있습니다.
+
+## Currying
+
+커링은 **여러 인자를 받는 함수를 인자를 하나씩 받는 함수의 체인으로 변환**하는 기법입니다.
+
+### 기본 개념
+
+```javascript
+const curryGreeting = (greet) => {
+  return (name) => {
+    console.log(greet + " " + name);
+  };
+};
+
+const welcomeGreet = curryGreeting("Welcome");
+welcomeGreet("henry"); // "Welcome henry"
+welcomeGreet("sara");  // "Welcome sara"
+```
+
+### curry 함수 구현
+
+```javascript
+function curry(fn, arity = fn.length) {
+  return (function nextCurried(prevArgs) {
+    return function curried(nextArg) {
+      const args = [...prevArgs, nextArg];
+      if (args.length >= arity) {
+        return fn(...args);
+      }
+      return nextCurried(args);
+    };
+  })([]);
+}
+```
+
+### curry 함수 동작 원리
+
+1. `curry()` 함수에서 즉시 실행 함수를 반환하여 바로 실행한다
+2. 내부의 `curried()`는 클로저가 되면서 전달받은 함수와 Arity를 기억한다
+3. Arity보다 전달받은 args가 작다면 `nextCurried(args)`를 실행하여 이전 인수들을 기억한 `curried()` 함수를 반환한다
+4. args가 Arity 이상이 되면 원래 함수를 실행한다
+
+`function add(a, b, c)`에서 `add.length`는 파라미터의 수(3)를 나타냅니다.
+
+### this 바인딩을 지원하는 curry
+
+```javascript
+function curry(fn) {
+  return function curried(...args) {
+    if (args.length >= fn.length) {
+      return fn.apply(this, args);
+    } else {
+      return function (...arg2) {
+        return curried.apply(this, args.concat(arg2));
+      };
+    }
+  };
+}
+```
+
+메서드로 호출될 수 있기 때문에 `this`를 바인딩합니다.
+
+### TypeScript로 구현한 curry
+
+```typescript
+type CurriedFunction<Args extends any[], R> = Args extends [
+  infer First,
+  ...infer Rest
+]
+  ? (arg: First) => CurriedFunction<Rest, R>
+  : R;
+
+function curry<Args extends any[], R>(
+  fn: (...args: Args) => R
+): CurriedFunction<Args, R> {
+  return (function nextCurried(prevArgs: any[]) {
+    return function curried(nextArg: any) {
+      const args = [...prevArgs, nextArg];
+      if (args.length >= fn.length) {
+        return fn(...(args as Args));
+      } else {
+        return nextCurried(args);
+      }
+    };
+  })([]) as unknown as CurriedFunction<Args, R>;
+}
+```
+
+클로저와 재귀 함수, 고차 함수, 일급 객체의 내용이 모두 들어갑니다.
+
+## Currying + pipe 조합
+
+커링과 pipe를 조합하면 강력한 함수 합성이 가능합니다:
+
+```javascript
+const ffun = (a, b, c) => a + b + c;
+const gfun = (d, e) => d + e;
+const hfun = (f, g, h) => f + g + h;
+
+const curriedF = curry(ffun);
+const curriedG = curry(gfun);
+const curriedH = curry(hfun);
+
+const newFunc = pipe(
+  curry(ffun)(1)(2),  // c가 전달되면 값을 반환
+  curry(gfun)(4),     // ffun의 결과가 e로 전달
+  curry(hfun)(5)(6)   // gfun의 결과가 h로 전달
+);
+
+newFunc(3); // 21
+```
+
+### 실전: curry를 이용한 함수 조합
+
+```javascript
+const users = [
+  { name: "james", score: 30, tries: 1 },
+  { name: "mary", score: 110, tries: 4 },
+  { name: "henry", score: 80, tries: 3 },
+];
+
+const getUsersUser = pipe(curry(getUser)(users), cloneObj);
+
+const updateHenry = pipe(
+  curry(updateScore)(getUsersUser("henry")),
+  cloneObj,
+  updateTries,
+  curry(storeUser)(users)
+);
+```
+
+## 핵심 정리
+
+| 개념 | 설명 |
+|------|------|
+| **compose** | 함수를 오른쪽→왼쪽 순서로 합성 (`reduceRight`) |
+| **pipe** | 함수를 왼쪽→오른쪽 순서로 합성 (`reduce`) |
+| **currying** | 다인자 함수를 단인자 함수 체인으로 변환 |
+| **부분 적용** | 함수의 일부 인자만 미리 고정 |
+
+- 함수 합성에 들어가는 함수는 반드시 **값을 반환**해야 합니다
+- 절차적 프로그래밍은 값을 조합해서 반환하는 반면, 선언적 프로그래밍은 **함수들을 조합해서 함수를 만들어냅니다**
+- `reduce`는 배열을 하나의 값으로 줄이는 것뿐만 아니라, 함수를 계속 실행하면서 결과를 누적하는 용도로도 활용됩니다
+
+다음 글에서는 계층형 설계와 재귀를 다룹니다.

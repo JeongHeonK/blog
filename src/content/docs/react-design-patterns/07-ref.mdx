@@ -1,0 +1,216 @@
+---
+title: "Ref 완전 정복"
+description: "useRef의 동작 원리부터 forwardRef, useImperativeHandle, callback ref까지 모든 Ref 패턴을 다룹니다."
+sidebar:
+  order: 7
+---
+
+React의 Ref는 렌더링을 유발하지 않고 값을 저장하거나 DOM에 직접 접근할 때 사용합니다. 단순해 보이지만 알아야 할 것이 많은 주제입니다.
+
+## Ref의 기본 용도
+
+JavaScript에서 `document.getElementById`로 하던 일을 React에서는 Ref로 처리합니다.
+
+- 렌더링을 유발하지 않고 값을 저장할 때 (timerId 등)
+- DOM에 직접 접근할 때 (focus, scroll 등)
+
+### Ref로 DOM을 직접 변경하면 안 되는 이유
+
+```jsx
+const Test = () => {
+  const [show, setShow] = useState(true);
+  const ref = useRef(null);
+
+  const handleWithRef = () => ref.current.remove();
+
+  return (
+    <div>
+      <button onClick={() => setShow(!show)}>state</button>
+      <button onClick={handleWithRef}>ref</button>
+      {show && <p>some word</p>}
+    </div>
+  );
+};
+```
+
+ref 버튼으로 DOM을 직접 삭제한 뒤 state 버튼을 누르면 에러가 발생합니다. React가 관리하는 DOM을 직접 변경하면 충돌이 일어나기 때문입니다. 스크롤, focus 같은 **읽기 성격의 조작**은 괜찮지만, DOM 삭제/추가 같은 **쓰기 조작**은 피해야 합니다.
+
+## Ref vs State: 핵심 차이
+
+### 리렌더링을 유발하지 않는다
+
+```jsx
+const Form = () => {
+  const ref = useRef("");
+  const charCount = ref.current.length || 0; // 항상 0으로 표시됨
+
+  return (
+    <div>
+      <input type="text" onChange={(e) => (ref.current = e.target.value)} />
+      <h2>Number of Char: {charCount}</h2>
+    </div>
+  );
+};
+```
+
+ref 값이 바뀌어도 리렌더링이 발생하지 않으므로 화면에는 항상 초기값이 표시됩니다. prop으로 전달해도 마찬가지입니다. 객체의 참조값 자체는 변하지 않기 때문입니다.
+
+반면 state는 매번 새로운 값을 생성합니다:
+
+```javascript
+const [state, setState] = useState({ a: 1 });
+// 같은 객체 참조 → 동작 안 함
+const increment = () => setState((prev) => (prev.a = prev.a + 1));
+// 새 객체 생성 → 동작함
+const increment = () =>
+  setState((prev) => ({ ...prev, a: prev.a + 1 }));
+```
+
+### 동기적으로 업데이트된다
+
+state는 비동기적으로 업데이트됩니다. `setState` 호출 후 바로 값을 읽으면 이전 값이 나옵니다. 반면 ref는 동기적으로 즉시 반영됩니다.
+
+```javascript
+// state: 비동기 업데이트 → before/after 모두 같은 값
+const handleChange = (e) => {
+  console.log("before: " + input);
+  setInput(e.target.value);
+  console.log("after: " + input); // 아직 이전 값
+};
+
+// ref: 동기 업데이트 → after에서 새 값 확인 가능
+const handleChange = (e) => {
+  console.log("before: " + ref.current);
+  ref.current = e.target.value;
+  console.log("after: " + ref.current); // 새 값
+};
+```
+
+## DOM 접근에 Ref 사용하기
+
+DOM에 접근할 때는 렌더링이 완료된 후에 ref를 참조해야 합니다. 보통 useEffect나 이벤트 핸들러 내에서 참조합니다.
+
+```tsx
+const Form = () => {
+  const [inputValue, setInputValue] = useState("");
+  const ref = useRef<HTMLInputElement>(null);
+
+  const submit = () => {
+    if (inputValue.length < 1) {
+      ref.current?.focus();
+      return;
+    }
+    sendData();
+  };
+
+  return (
+    <>
+      <input type="text" ref={ref} onChange={(e) => setInputValue(e.target.value)} />
+      <button onClick={submit}>submit</button>
+    </>
+  );
+};
+```
+
+## Ref를 Prop으로 전달하기
+
+React는 `ref`를 일반 props와 별도로 관리합니다. 자식 컴포넌트에 ref를 전달하려면 다른 이름을 사용하거나 `forwardRef`를 사용해야 합니다.
+
+```tsx
+// 다른 이름 사용
+<Input inputRef={ref} /> // 가능
+<Input ref={ref} />      // 불가능 (forwardRef 없이)
+
+// forwardRef 사용
+const Input = forwardRef((props, ref) => {
+  return <input ref={ref} {...props} />;
+});
+```
+
+## Callback Ref 패턴
+
+조건부로 렌더링되는 요소에 ref를 사용할 때, 해당 요소가 아직 DOM에 없으면 `null` 참조 에러가 발생합니다.
+
+```jsx
+const App = () => {
+  const [showInput, setShowInput] = useState(false);
+  const inputRef = useRef(null);
+
+  useEffect(() => {
+    // showInput이 false일 때 inputRef.current는 null!
+    inputRef.current.focus(); // 에러 발생
+  });
+
+  return (
+    <div>
+      <button onClick={() => setShowInput(!showInput)}>Switch</button>
+      {showInput && <input type="text" ref={inputRef} />}
+    </div>
+  );
+};
+```
+
+이 문제는 callback ref로 해결할 수 있습니다. ref에 함수를 전달하면 DOM 요소가 인수로 자동 전달됩니다.
+
+```jsx
+const App = () => {
+  const [showInput, setShowInput] = useState(false);
+
+  const inputRef = useCallback((input) => {
+    if (input === null) return;
+    input.focus();
+  }, []);
+
+  return (
+    <div>
+      <button onClick={() => setShowInput(!showInput)}>Switch</button>
+      {showInput && <input type="text" ref={inputRef} />}
+    </div>
+  );
+};
+```
+
+ref에 함수를 전달하면 해당 DOM 요소가 자동으로 인수에 전달됩니다:
+
+```jsx
+const handleRef = (elem) => {
+  console.log(elem); // button DOM node
+};
+
+return <button ref={handleRef}>Click</button>;
+```
+
+## useImperativeHandle
+
+`forwardRef`가 부모에게 자식의 DOM 전체를 노출시킨다면, `useImperativeHandle`은 **사용자 정의 객체(명령형 핸들)**만 노출시킵니다.
+
+```tsx
+const Input = forwardRef((props, ref) => {
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useImperativeHandle(ref, () => ({
+    focus() {
+      inputRef.current?.focus();
+    },
+    scrollIntoView() {
+      inputRef.current?.scrollIntoView();
+    },
+  }));
+
+  return <input ref={inputRef} {...props} />;
+});
+
+const Parent = () => {
+  const ref = useRef(null);
+
+  return (
+    <div>
+      <Input ref={ref} />
+      <button onClick={() => ref.current.focus()}>Focus</button>
+      <button onClick={() => ref.current.scrollIntoView()}>Scroll</button>
+    </div>
+  );
+};
+```
+
+이렇게 하면 부모 컴포넌트가 자식 DOM에 직접 접근하지 않고, 정의된 메서드만 호출할 수 있어 안전합니다.

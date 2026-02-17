@@ -1,0 +1,159 @@
+---
+title: "this 바인딩의 모든 것"
+description: "JavaScript에서 this가 결정되는 규칙과 call, apply, bind, 화살표 함수의 동작을 정리합니다."
+sidebar:
+  order: 2
+---
+
+JavaScript에서 `this`는 선언 시점이 아니라 **호출 시점**에서 결정됩니다. 이 규칙을 이해하면 대부분의 this 관련 혼란을 해소할 수 있습니다.
+
+## this의 기본 규칙
+
+```javascript
+const person = {
+  name: "some",
+  sayName() { return this.name; },
+};
+
+person.sayName(); // "some" (메서드로 호출 → this는 person)
+
+const sayNameOut = person.sayName;
+sayNameOut(); // undefined (일반 함수로 호출 → this는 globalThis)
+```
+
+일반 함수로 호출하면 `this`는 전역 객체(`globalThis`)를 가리키고, 전역 객체에는 `name`이 없으므로 `undefined`가 반환됩니다.
+
+### class에서의 this
+
+```javascript
+class Person {
+  constructor(name) { this.firstName = name; }
+  sayPersonName() { return this.firstName; }
+}
+
+const p = new Person("him");
+const sayPName = p.sayPersonName;
+sayPName(); // TypeError!
+```
+
+class는 항상 **Strict Mode**에서 동작합니다. Strict Mode에서 일반 함수 호출의 `this`는 `undefined`이므로, `undefined`의 프로퍼티를 읽으려 해서 에러가 발생합니다.
+
+## call, apply, bind
+
+### call
+
+`func.call(thisArg, arg1, arg2, ...)`
+
+this를 지정하여 함수를 **즉시 실행**합니다.
+
+```javascript
+const person = new Person("so-jung");
+const pSayHi = person.sayHi;
+
+pSayHi.call(person); // "hi i'm so-jung"
+
+// 다른 객체의 메서드로도 사용 가능
+const newPerson = { name: "some" };
+pSayHi.call(newPerson); // "hi i'm some"
+```
+
+### apply
+
+`func.apply(thisArg, [argsArray])`
+
+call과 동일하지만 인수를 **배열**로 전달합니다.
+
+```javascript
+// 스프레드 연산자가 없던 시절의 패턴
+Math.max.apply(null, numberArray);
+```
+
+### bind
+
+`func.bind(thisArg, arg1, ...)`
+
+this가 바인딩된 **새 함수를 반환**합니다. call/apply와 달리 즉시 실행하지 않습니다.
+
+```javascript
+const sayHiAnywhere = person.sayHi.bind(person);
+sayHiAnywhere(); // 언제 호출해도 "hi i'm so-jung"
+```
+
+bind를 활용한 부분 적용(partial application):
+
+```javascript
+function applySalesTax(taxRate, price) {
+  return price * taxRate;
+}
+const applySales = applySalesTax.bind(null, 0.725);
+applySales(1000); // 725
+```
+
+## setTimeout과 this 문제
+
+`setTimeout`은 Web API에서 처리된 후 콜백을 **일반 함수로** 호출합니다. 따라서 `this`가 전역 객체가 됩니다.
+
+```javascript
+class Timer {
+  constructor(start, increment) {
+    this.start = start;
+    this.increment = increment;
+  }
+  run() {
+    setInterval(function() {
+      this.start += this.increment; // this는 window!
+    }, 1000);
+  }
+}
+```
+
+### 해결 1: bind 사용
+
+```javascript
+class Timer {
+  constructor(start, increment) {
+    this.start = start;
+    this.increment = increment;
+  }
+  run() {
+    setInterval(this.tick.bind(this), 1000);
+  }
+  tick() {
+    this.start += this.increment;
+    console.log(this.start);
+  }
+}
+```
+
+### 해결 2: 화살표 함수 사용
+
+화살표 함수는 자체 `this`가 없으며 **외부 스코프의 this**를 그대로 사용합니다. 마치 bind된 것과 같습니다.
+
+```javascript
+class Timer {
+  constructor(start, increment) {
+    this.start = start;
+    this.increment = increment;
+  }
+  run() {
+    setInterval(() => {
+      this.start += this.increment; // this는 Timer 인스턴스
+      console.log(this.start);
+    }, 1000);
+  }
+}
+```
+
+화살표 함수 외부의 `run` 메서드가 가진 `this`와 같은 값을 사용합니다.
+
+### 주의: 메서드를 일반 함수로 호출하면?
+
+```javascript
+const timer = new Timer(1, 1);
+timer.run(); // this = timer 인스턴스
+
+const test = timer.run;
+test(); // TypeError! (Strict Mode에서 this = undefined)
+```
+
+메서드를 변수에 할당하여 일반 함수로 호출하면 `this`가 `undefined`가 되고, 화살표 함수의 `this`도 `undefined`가 됩니다. 클로저와 this가 결합된 개념으로, 정확히 이해하지 못하면 디버깅이 매우 어렵습니다.

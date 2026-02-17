@@ -1,0 +1,270 @@
+---
+title: "성능 최적화: memo, useMemo, useCallback"
+description: "React의 memoization 전략과 흔히 발생하는 실수, 올바른 사용법을 정리합니다."
+sidebar:
+  order: 9
+---
+
+React에서 성능 최적화의 핵심은 **불필요한 리렌더링 방지**입니다. `memo`, `useMemo`, `useCallback`의 동작 원리와 함께 실수하기 쉬운 패턴들을 정리합니다.
+
+## 값 비교의 기본 원리
+
+성능 최적화를 이해하려면 JavaScript의 값 비교를 먼저 알아야 합니다.
+
+```javascript
+// 원시값: 같은 값이면 같다고 판단
+const x = 3;
+const y = 3;
+console.log(x === y); // true
+
+// 참조값: 같은 데이터라도 메모리 주소가 다르면 다르다고 판단
+const x = { a: 3 };
+const y = { a: 3 };
+console.log(x === y); // false
+```
+
+이 때문에 dependency에 함수를 추가하면 매번 새로운 함수가 생성되어 리렌더링을 유발할 수 있습니다.
+
+## memo: 컴포넌트 memoization
+
+`memo`로 감싼 컴포넌트는 전달되는 props가 이전과 같으면 리렌더링하지 않습니다.
+
+```jsx
+import { memo } from "react";
+const SomeComp = memo(function SomeComp(props) { /* ... */ });
+```
+
+### memo가 깨지는 경우: 참조값 props
+
+props가 참조값(객체, 배열, 함수)이면 매번 새로운 참조가 생성되어 memo가 동작하지 않습니다.
+
+```jsx
+// 안티패턴: memo가 무효화됨
+const Parent = () => {
+  const data = [];                      // 매번 새 배열
+  const changeHandler = () => {};       // 매번 새 함수
+
+  return <MemoizedComp info={data} onChange={changeHandler} />;
+};
+
+// 올바른 패턴: 참조를 안정화
+const Parent = () => {
+  const data = useMemo(() => [], []);
+  const changeHandler = useCallback(() => {}, []);
+
+  return <MemoizedComp info={data} onChange={changeHandler} />;
+};
+```
+
+### children도 참조값이다
+
+```jsx
+const MainComp = () => {
+  return (
+    <MemoizedParent>
+      <MemoizedChild /> {/* 매번 새 객체로 생성됨 */}
+    </MemoizedParent>
+  );
+};
+```
+
+컴포넌트는 `createElement`로 생성된 객체이므로 children으로 전달하면 항상 새로운 참조가 됩니다.
+
+```jsx
+// 해결: children도 useMemo로 캐싱
+const MainComp = () => {
+  const child = useMemo(() => <MemoizedChild />, []);
+  return <MemoizedParent>{child}</MemoizedParent>;
+};
+```
+
+### spread로 props 전달하면 안 되는 이유
+
+props drilling 상황에서 `{...props}`로 전달하면 참조값이 포함되지 않았다는 것을 보장할 수 없어 memoization이 깨집니다. 항상 전달할 props를 명확히 지정하세요.
+
+### default prop 주의
+
+optional prop의 기본값이 비원시값이면 매번 새로운 참조가 생성됩니다.
+
+```jsx
+// 안티패턴: 매번 새 함수 참조
+const UserAvatar = memo(function UserAvatar({ onClick = () => {} }) {});
+
+// 올바른 패턴: 외부 상수로 추출
+const NOOP = () => {};
+const UserAvatar = memo(function UserAvatar({ onClick = NOOP }) {});
+```
+
+## useMemo와 useCallback
+
+### useCallback: 함수 참조 보존
+
+`useCallback`은 함수의 재생성을 방지합니다. 주로 memo된 컴포넌트에 함수를 전달할 때 사용합니다.
+
+```jsx
+const App = () => {
+  const [input, setInput] = useState("");
+  const [lists, setLists] = useState(initialData);
+
+  // useCallback 없으면 매번 새 함수 → memo 무효화
+  const deleteList = useCallback((id) => {
+    setLists((prev) => prev.filter((list) => list.id !== id));
+  }, []);
+
+  return (
+    <div>
+      <MemoizedInputLists lists={lists} onDelete={deleteList} />
+      <Input value={input} onChange={setInput} />
+    </div>
+  );
+};
+```
+
+### 불필요한 useCallback 사용
+
+```jsx
+// 이 경우 useCallback은 의미 없음
+const Comp = () => {
+  const handleClick = useCallback(() => {}, []);
+  return <button onClick={handleClick}>click</button>;
+};
+```
+
+클릭으로 리렌더링이 발생하면 useCallback은 함수 재생성만 막을 뿐 JSX 렌더링에는 영향이 없습니다.
+
+### useMemo vs useCallback
+
+보통 useCallback은 함수, useMemo는 값을 기억한다고 생각하지만, useMemo가 함수를 return하면 일급 함수 특성상 값으로 취급됩니다. 실제로 useCallback은 useMemo의 syntactic sugar입니다.
+
+```javascript
+// 직접 구현해보면 관계가 명확
+function useMemo<T>(factory: () => T, deps: DependencyList): T {
+  const ref = useRef({ value: undefined as T, deps: undefined });
+  if (!ref.current.deps || !shallowEqual(deps, ref.current.deps)) {
+    ref.current.value = factory();
+    ref.current.deps = deps;
+  }
+  return ref.current.value;
+}
+
+function useCallback<T extends Function>(callback: T, deps: DependencyList): T {
+  return useMemo(() => callback, deps);
+}
+```
+
+### 단순 원시값에는 useMemo를 쓰지 말 것
+
+표현식이 단순하고 결과가 원시값이면 useMemo를 쓰는 것이 오히려 비효율적입니다.
+
+```jsx
+// 안티패턴: useMemo 호출 비용이 더 큼
+const isLoading = useMemo(() => {
+  return user.isLoading || notifications.isLoading;
+}, [user.isLoading, notifications.isLoading]);
+
+// 올바른 패턴: 직접 계산
+const isLoading = user.isLoading || notifications.isLoading;
+```
+
+## Closure 이슈와 해결
+
+`memo`의 커스텀 비교 함수와 `useCallback`을 함께 사용할 때 클로저 문제가 발생할 수 있습니다.
+
+```jsx
+const MemoizedComp = React.memo(ExpensiveComponent, (before, after) => {
+  return before.btnLabel === after.btnLabel;
+});
+
+export default function App() {
+  const [value, setValue] = useState<string>();
+
+  const handleClick = useCallback(() => {
+    console.log(value); // 항상 undefined! (초기값의 클로저)
+  }, [value]);
+
+  return (
+    <div>
+      <input onChange={(e) => setValue(e.target.value)} />
+      <MemoizedComp btnLabel="click me" onClick={handleClick} />
+    </div>
+  );
+}
+```
+
+커스텀 비교 함수가 `btnLabel`만 비교하므로 컴포넌트는 리렌더링되지 않고, 처음 memo된 시점의 클로저가 유지됩니다.
+
+### 해결: Ref 사용
+
+```jsx
+export default function App() {
+  const [value, setValue] = useState<string>();
+  const ref = useRef<() => void>();
+
+  const handleClick = useCallback(() => {
+    ref.current?.();
+  }, []);
+
+  useEffect(() => {
+    ref.current = () => {
+      console.log(value); // 항상 최신 value 참조
+    };
+  }, [value]);
+
+  return (
+    <div>
+      <input onChange={(e) => setValue(e.target.value)} />
+      <MemoizedComp btnLabel="click me" onClick={handleClick} />
+    </div>
+  );
+}
+```
+
+`useCallback`의 함수는 ref를 통해 간접 호출하므로 재생성되지 않고, ref.current는 useEffect에서 최신 값으로 갱신됩니다.
+
+## 함수형 setState로 안정적인 콜백 만들기
+
+현재 state에 기반해 업데이트할 때는 함수형 업데이트를 사용하면 stale closure를 방지하고 의존성 배열을 비울 수 있습니다.
+
+```jsx
+// 안티패턴: items 의존성 → 매번 콜백 재생성
+const addItem = useCallback((newItem) => {
+  setItems([...items, newItem]);
+}, [items]);
+
+// 올바른 패턴: 의존성 없이 안정적
+const addItem = useCallback((newItem) => {
+  setItems((prev) => [...prev, newItem]);
+}, []);
+```
+
+## memo 대신 컴포넌트 분리
+
+비용이 큰 작업은 별도 memo 컴포넌트로 추출하면 early return이 가능합니다.
+
+```jsx
+// 안티패턴: loading 중에도 computeAvatarId 실행
+function Profile({ user, loading }) {
+  const avatar = useMemo(() => {
+    const id = computeAvatarId(user);
+    return <Avatar id={id} />;
+  }, [user]);
+
+  if (loading) return <Skeleton />;
+  return <div>{avatar}</div>;
+}
+
+// 올바른 패턴: loading이면 연산 자체를 건너뜀
+const UserAvatar = memo(function UserAvatar({ user }) {
+  const id = useMemo(() => computeAvatarId(user), [user]);
+  return <Avatar id={id} />;
+});
+
+function Profile({ user, loading }) {
+  if (loading) return <Skeleton />;
+  return <div><UserAvatar user={user} /></div>;
+}
+```
+
+## React Compiler 참고
+
+React Compiler가 활성화된 프로젝트에서는 `memo()`, `useMemo()`, `useCallback()`을 수동으로 작성할 필요가 없습니다. 컴파일러가 자동으로 리렌더링을 최적화해줍니다.

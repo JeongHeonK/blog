@@ -1,0 +1,95 @@
+---
+title: "Virtual DOM과 React Lifecycle"
+description: "Virtual DOM의 개념, React의 구성 요소, 렌더링 과정과 Lifecycle을 이해합니다."
+sidebar:
+  order: 1
+---
+
+React의 핵심인 Virtual DOM과 렌더링 과정을 이해하면, 왜 React가 이렇게 동작하는지 근본적으로 알 수 있습니다.
+
+## Virtual DOM이란?
+
+Virtual DOM은 UI 관련 정보를 메모리 상에 유지하는 프로그래밍 컨셉입니다. `react-dom` 같은 라이브러리가 실제 DOM과 동기화(sync)를 맞추는데, 이 과정을 **Reconciliation**이라고 합니다.
+
+### 왜 Virtual DOM인가?
+
+실제 DOM에 직접 변경을 적용하는 것은 비용이 큽니다 (mount → paint). Virtual DOM에서 변경 사항을 먼저 계산하고, 최소한의 변경만 실제 DOM에 반영하는 것이 더 효율적입니다.
+
+```jsx
+const root = ReactDOM.createRoot(
+  document.getElementById("root") as HTMLElement
+);
+
+root.render(
+  <React.StrictMode>
+    <App />
+  </React.StrictMode>
+);
+```
+
+## React의 구성 요소
+
+### 핵심 패키지
+
+- **React 코어**: 컴포넌트 정의 담당. 다른 패키지에 의존성이 없어 다양한 플랫폼에서 사용 가능
+- **Renderer**: `react-dom`, `react-native-renderer` 등 호스트 렌더링 환경에 의존. reconciler와 legacy-events 패키지에 의존
+- **Event (legacy-events)**: `SyntheticEvent`라는 자체 이벤트 시스템. 기존 웹 이벤트를 래핑하여 추가 기능 수행
+- **Scheduler**: React는 task를 비동기로 실행하며, 이 실행 타이밍을 관리하는 패키지
+- **Reconciler**: Fiber 아키텍처에서 VDOM 재조정 담당. 컴포넌트 호출 수행
+
+### 주요 용어
+
+#### 렌더링
+
+컴포넌트를 호출하여 React Element를 반환하고, VDOM에 적용(재조정)하는 과정입니다.
+
+전체 흐름:
+1. 컴포넌트 호출 → React Element 반환
+2. VDOM 재조정 작업 (여기까지가 렌더링)
+3. Renderer가 컴포넌트 정보를 DOM에 삽입 (mount)
+4. 브라우저가 DOM을 paint
+
+**컴포넌트 리렌더링**은 컴포넌트를 다시 호출하여 결과가 VDOM에 반영되는 것입니다. 실제 DOM에 mount되어 paint되는 것과는 별개의 과정입니다.
+
+#### React Element
+
+컴포넌트 호출 시 반환되는 것입니다. JSX는 Babel을 통해 `React.createElement()` 호출로 변환됩니다.
+
+```jsx
+// JSX
+const element = <Component />;
+
+// 변환 결과
+const element = React.createElement(Component, null, null);
+
+// 실제 생성되는 객체
+const element = {
+  type: Component,
+  props: {},
+  key: null,
+  ref: null,
+  // ...
+};
+```
+
+#### Fiber
+
+VDOM의 노드 객체입니다. React Element의 내용이 DOM에 반영되기 위해 먼저 VDOM에 추가되어야 하는데, 이를 위해 React Element를 확장한 객체가 Fiber입니다. 컴포넌트의 상태, 라이프사이클, hook이 Fiber에서 관리됩니다.
+
+## React Lifecycle
+
+### Render Phase
+
+VDOM을 재조정(Reconciliation)하는 단계입니다.
+
+- Element의 추가, 수정, 삭제에 따라 **WORK**를 Scheduler에 등록
+- **WORK**: Reconciler가 컴포넌트의 변경을 DOM에 적용하기 위해 수행하는 작업
+- Reconciler가 담당
+- Stack에서 Fiber로 전환되면서 **렌더링 우선순위 변경이 가능**해짐
+
+### Commit Phase
+
+재조정한 VDOM을 DOM에 적용하고 라이프사이클을 실행하는 단계입니다.
+
+- 일관성을 위해 동기적으로 실행
+- React가 DOM 조작을 일괄 처리 → 콜스택 비우기 → 브라우저 paint 실행

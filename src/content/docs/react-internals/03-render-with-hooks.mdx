@@ -1,0 +1,141 @@
+---
+title: "renderWithHooks로 보는 Hook 주입 과정"
+description: "React 내부에서 Hook이 어떻게 주입되고 useState가 어떻게 동작하는지 소스 코드 레벨에서 분석합니다."
+sidebar:
+  order: 3
+---
+
+React Hook은 마법처럼 동작하는 것이 아닙니다. 내부적으로 Reconciler의 `renderWithHooks()` 함수가 Hook을 주입하는 역할을 합니다. 이 과정을 이해하면 Hook의 규칙이 왜 존재하는지 알 수 있습니다.
+
+## renderWithHooks()의 역할
+
+"hook과 함께 render", 즉 **Hook을 주입하는 역할**을 합니다. 렌더링(컴포넌트 호출 후 결과가 VDOM에 반영되는 과정) 시 컴포넌트 호출도 이 함수에서 진행됩니다.
+
+### mount와 update 구분
+
+```javascript
+ReactCurrentDispatcher.current =
+  nextCurrentHook === null
+    ? HooksDispatcherOnMount
+    : HooksDispatcherOnUpdate;
+```
+
+- `nextCurrentHook === null` → 첫 렌더링 (mount) → `HooksDispatcherOnMount`
+- `nextCurrentHook !== null` → 업데이트 (update) → `HooksDispatcherOnUpdate`
+
+`ReactCurrentDispatcher.current`에 할당된 값들이 컴포넌트 호출 시 모두 실행됩니다.
+
+## useState의 내부 구조
+
+### Hook 객체
+
+`mountWorkInProgressHook()` 실행 시 생성되는 Hook 객체의 구조:
+
+```typescript
+function mountWorkInProgressHook(): Hook {
+  const hook: Hook = {
+    memoizedState: null, // 마지막에 얻은 state 값
+    baseState: null,
+    queue: null,         // update 객체를 linked list로 구현한 queue
+    baseUpdate: null,
+    next: null,          // 다음 hook을 가리키는 pointer (linked list)
+  };
+  // ...
+}
+```
+
+- `hook.memoizedState`: 마지막에 얻은 state 값
+- `hook.next`: 다음 hook을 가리키는 pointer (linked list)
+- `hook.queue`: hook 호출 시 update 객체를 linked list queue에 저장
+
+### workInProgressHook
+
+- `workInProgressHook === null`이면 첫 번째 hook, 아니면 다음 hook 추가
+- `fiber.memoizedState`에 `firstWorkInProgressHook` 할당
+
+### mountState (useState의 mount 시 동작)
+
+- initialState가 함수면 호출하여 초기값 할당
+- `hook.memoizedState`에 initialState 할당
+
+## setState의 상태 업데이트 과정
+
+### dispatchAction 함수
+
+`setState`를 호출하면 내부적으로 `dispatchAction`이 실행됩니다.
+
+1. **update 객체 생성**
+   - `expirationTime`: 우선순위
+   - `action`: 업데이트할 값 또는 함수
+   - `next: null`: linked list
+   - `eagerReducer`, `eagerState`: 렌더링 최적화용
+
+2. **update 객체를 queue에 저장**
+
+3. **불필요한 렌더링 방지 최적화**
+
+4. **WORK를 Scheduler에 예약**
+
+## idle phase와 render phase 구별
+
+```typescript
+let currentlyRenderingFiber: Fiber | null = null;
+
+if (
+  fiber === currentlyRenderingFiber ||
+  (alternate !== null && alternate === currentlyRenderingFiber)
+) {
+  // render phase에서의 업데이트
+}
+```
+
+### 렌더링 무한 루프 방지
+
+`didScheduleRenderPhaseUpdate`로 render phase가 시작되었음을 표시하고, `RE_RENDER_LIMIT = 25`로 렌더링 횟수를 제한합니다.
+
+## Hook 의존성 주입 구조
+
+React 코어는 hook을 직접 구현하지 않고 외부에서 주입받습니다. 이는 의존성을 끊기 위한 설계입니다.
+
+```
+reactHooks → resolveDispatcher() → ReactCurrentDispatcher.current → ReactSharedInternals
+```
+
+- React 코어는 React Element에 대한 정보만 알고 있음
+- React Element는 Fiber로 확장해야 hook을 포함하게 됨
+- Reconciler가 이 확장을 담당
+
+이렇게 의존성을 분리함으로써 React 코어는 웹뿐만 아니라 모바일(React Native) 등 다양한 플랫폼에서도 사용할 수 있습니다.
+
+## useState 직접 구현해보기
+
+useReducer로 useState를 구현하면 내부 동작을 더 명확하게 이해할 수 있습니다.
+
+```typescript
+import { useReducer } from "react";
+
+type SetStateAction<S> = S | ((prevState: S) => S);
+
+const getInitialState = <T>(initialState: T | (() => T)): T => {
+  if (typeof initialState === "function") {
+    return (initialState as () => T)();
+  }
+  return initialState;
+};
+
+const reducer = <U>(state: U, action: SetStateAction<U>): U => {
+  if (typeof action === "function") {
+    return (action as (prev: U) => U)(state);
+  }
+  return action;
+};
+
+const useState = <S>(
+  initialState: S | (() => S)
+): [S, (action: SetStateAction<S>) => void] => {
+  const [state, dispatch] = useReducer(reducer, getInitialState(initialState));
+  return [state, dispatch];
+};
+```
+
+이 구현에서 볼 수 있듯이, `useState`는 내부적으로 `useReducer`의 특수한 형태입니다. action이 함수이면 이전 state를 인자로 호출하고, 아니면 값 자체를 새 state로 사용합니다.

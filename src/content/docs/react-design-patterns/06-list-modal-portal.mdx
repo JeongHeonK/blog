@@ -1,0 +1,193 @@
+---
+title: "리스트, 모달, 포탈 패턴"
+description: "재사용 가능한 리스트 컴포넌트, 모달 구현, React Portal의 동작 원리를 알아봅니다."
+sidebar:
+  order: 6
+---
+
+UI에서 가장 빈번하게 사용되는 리스트, 모달, 화면 분할 패턴과 React Portal의 동작 원리를 살펴봅니다.
+
+## 재사용 가능한 리스트 패턴
+
+리스트 아이템의 표현 방식을 유연하게 변경할 수 있도록 설계합니다.
+
+```tsx
+// 상세 리스트 아이템
+export const LargeListItem = ({ author }: Props) => {
+  const { name, age, country, books } = author;
+  return (
+    <>
+      <h2>{name}</h2>
+      <p>Age: {age}</p>
+      <p>Country: {country}</p>
+      <ul>
+        {books.map((book) => (
+          <li key={book}>{book}</li>
+        ))}
+      </ul>
+    </>
+  );
+};
+
+// 간단한 리스트 아이템
+export const SmallListItem = ({ author }: Props) => {
+  const { name, age } = author;
+  return (
+    <p>
+      Name: {name}, Age: {age}
+    </p>
+  );
+};
+
+// 범용 리스트 컴포넌트
+export const RegularList = ({ items, sourceName, ItemComponent }) => {
+  return (
+    <>
+      {items.map((item, i) => (
+        <ItemComponent key={i} {...{ [sourceName]: item }} />
+      ))}
+    </>
+  );
+};
+```
+
+사용 시 `ItemComponent`만 변경하면 같은 데이터를 다른 형태로 표시할 수 있습니다.
+
+```tsx
+function App() {
+  return (
+    <>
+      <RegularList
+        items={authors}
+        sourceName="author"
+        ItemComponent={SmallListItem}
+      />
+      <RegularList
+        items={authors}
+        sourceName="author"
+        ItemComponent={LargeListItem}
+      />
+    </>
+  );
+}
+```
+
+## SplitScreen 패턴
+
+화면을 좌우로 분할하는 레이아웃 컴포넌트입니다.
+
+```tsx
+import { ComponentType } from "react";
+import styled from "styled-components";
+
+type Props = {
+  Left: ComponentType<object>;
+  Right: ComponentType<object>;
+};
+
+export const SplitScreen = ({ Left, Right }: Props) => {
+  return (
+    <Container>
+      <Panel>
+        <Left />
+      </Panel>
+      <Panel>
+        <Right />
+      </Panel>
+    </Container>
+  );
+};
+
+const Container = styled.div`
+  display: flex;
+`;
+
+const Panel = styled.div`
+  flex: 1;
+`;
+```
+
+## 모달 구현
+
+기본적인 모달 컴포넌트는 내부에서 열림/닫힘 상태를 관리합니다.
+
+```tsx
+import { ReactNode, useState } from "react";
+import styled from "styled-components";
+
+export const Modal = ({ children }: { children: ReactNode }) => {
+  const [isShow, setIsShow] = useState(false);
+
+  return (
+    <>
+      <button onClick={() => setIsShow(true)}>Show Modal</button>
+      {isShow && (
+        <ModalBackGround onClick={() => setIsShow(false)}>
+          <ModalContent onClick={(e) => e.stopPropagation()}>
+            <button onClick={() => setIsShow(false)}>Close</button>
+            {children}
+          </ModalContent>
+        </ModalBackGround>
+      )}
+    </>
+  );
+};
+
+const ModalBackGround = styled.div`
+  position: absolute;
+  left: 0;
+  top: 0;
+  overflow: auto;
+  background-color: #00000070;
+  width: 100vw;
+  height: 100vh;
+`;
+
+const ModalContent = styled.div`
+  margin: 12% auto;
+  padding: 24px;
+  background-color: wheat;
+  width: 50%;
+`;
+```
+
+배경을 클릭하면 모달이 닫히고, `e.stopPropagation()`으로 모달 콘텐츠 클릭 시에는 닫히지 않도록 처리합니다.
+
+## React Portal
+
+`createPortal`은 컴포넌트를 DOM 트리의 다른 위치에 렌더링합니다. 모달, 툴팁, 알림 같은 UI에서 유용합니다.
+
+```jsx
+import { createPortal } from "react-dom";
+
+{createPortal(
+  <p>This child is placed in the document body.</p>,
+  document.querySelector("#alert-holder")
+)}
+```
+
+### 왜 body 대신 별도의 DOM 노드를 사용할까?
+
+React 앱은 보통 `<div id="app"></div>` 안에서 실행됩니다. 다른 라이브러리도 `body`에 종속되는 경우가 많기 때문에, Portal용으로 별도의 `div`를 만들어서 사용하는 것이 좋습니다.
+
+### 이벤트 버블링 주의
+
+Portal로 생성된 요소는 실제 DOM에서는 별도의 위치에 있지만, React의 가상 DOM 트리에서는 원래 위치에 있습니다. 따라서 **이벤트 버블링은 JSX 트리 기준**으로 발생합니다.
+
+```jsx
+function App() {
+  const [show, setShow] = useState(false);
+
+  return (
+    <div onClick={() => console.log("outer")}>
+      {show &&
+        createPortal(
+          <button onClick={() => setShow(!show)}>Click me</button>,
+          document.querySelector("#alert-holder")
+        )}
+    </div>
+  );
+}
+```
+
+위 코드에서 Portal 내부의 버튼을 클릭하면, 실제 DOM에서는 `#alert-holder` 안에 있지만 React의 이벤트 시스템에서는 `div`의 하위 요소이므로 `"outer"` 로그도 함께 출력됩니다. React는 실제 DOM의 위치를 알지 못하고 JSX 구조를 기준으로 이벤트를 전파하기 때문입니다.

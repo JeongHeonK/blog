@@ -1,0 +1,129 @@
+---
+title: "React 상태 관리의 두 가지 접근법"
+description: "Hook 분리, useState와 useReducer의 관계, 데이터 중심 vs 컴포넌트 중심 접근 방식을 알아봅니다."
+sidebar:
+  order: 1
+---
+
+React에서 상태 관리를 어떻게 접근할 것인가는 프로젝트의 구조와 유지보수성에 큰 영향을 미칩니다. 이 글에서는 Hook 분리의 이유, useState와 useReducer의 관계, 그리고 상태 관리의 두 가지 접근 방식을 살펴봅니다.
+
+## Hook을 분리하는 이유
+
+### Before: 상태와 로직이 컴포넌트에 혼재
+
+```jsx
+const Component = () => {
+  const [count, setCount] = useState(0);
+
+  const handleAddCount = () => {
+    setCount((prev) => prev + 1);
+  };
+
+  return (
+    <div>
+      <p>{count}</p>
+      <button onClick={handleAddCount}> + </button>
+    </div>
+  );
+};
+```
+
+### After: Custom Hook으로 분리
+
+```jsx
+const Component = () => {
+  const [count, handleAddCount] = useCount();
+
+  return (
+    <div>
+      <p>{count}</p>
+      <button onClick={handleAddCount}> + </button>
+    </div>
+  );
+};
+
+const useCount = () => {
+  const [count, setCount] = useState(0);
+
+  const handleAddCount = () => {
+    setCount((prev) => prev + 1);
+  };
+
+  return [count, handleAddCount] as const;
+};
+```
+
+### 분리하는 이유
+
+1. **코드의 가독성 증가** - 해당 상태가 어떤 상태인지 명시할 수 있다
+2. **관심사의 분리** - 컴포넌트를 건드리지 않고 기능 추가 가능
+3. **handler 함수 생성해서 바로 return 가능** - 재사용성 향상
+
+## useState와 useReducer의 관계
+
+useState와 useReducer는 사실 상호 구현이 가능합니다. 둘은 같은 메커니즘의 서로 다른 인터페이스입니다.
+
+### useReducer로 useState 구현
+
+```tsx
+const customReducer = (prev: unknown, action: unknown) =>
+  typeof action === "function" ? action(prev) : action;
+
+const useCustomState = (initialState: unknown) => {
+  return useReducer(customReducer, initialState);
+};
+```
+
+### useState로 useReducer 구현
+
+```tsx
+const useCustomReducer = (
+  reducer: (prev: unknown, action: unknown) => unknown,
+  initialState: unknown,
+  init?: (state: unknown) => unknown
+) => {
+  const [state, setState] = useState(
+    init ? init(initialState) : initialState
+  );
+  const dispatch = (action: unknown) =>
+    setState((prev) => reducer(prev, action));
+
+  return [state, dispatch] as const;
+};
+```
+
+이를 통해 useState와 useReducer가 본질적으로 같은 것을 알 수 있습니다. 상황에 맞게 편한 것을 선택하면 됩니다.
+
+## 데이터 중심 vs 컴포넌트 중심 접근 방식
+
+상태 관리에는 크게 두 가지 접근 방식이 있습니다.
+
+### 1. 데이터 중심 접근 방식
+
+- 데이터 모델을 **싱글턴**으로 가질 수 있으며 처리할 데이터가 존재
+- 컴포넌트를 정의한 후 데이터와 컴포넌트를 연결
+- **모듈 상태**를 사용하는 것이 적합 (예: Zustand, Redux)
+
+### 2. 컴포넌트 중심 접근 방식
+
+- **컴포넌트를 먼저** 설계
+- 컴포넌트에서 state lifting 및 props drilling이 어려운 경우 도입
+- 데이터 모델이 컴포넌트에 **강한 의존성**을 가짐
+- 컴포넌트 생명 주기 내에서 전역 상태를 유지할 경우, 두 개 이상의 동일한 전역 상태를 둘 수 있음 (예: Jotai, Recoil)
+
+### 선택 기준
+
+꼭 하나만 선택하는 것이 아니라 **상황에 맞추어 선택**해야 합니다. 두 가지를 동시에 사용하는 것도 가능합니다.
+
+| 접근 방식 | 적합한 경우 | 라이브러리 예시 |
+|----------|-----------|-------------|
+| 데이터 중심 | 글로벌 데이터 모델이 명확할 때 | Zustand, Redux |
+| 컴포넌트 중심 | 컴포넌트 트리 구조에 의존할 때 | Jotai, Recoil |
+
+## 정리
+
+- **Custom Hook** 분리는 가독성, 관심사 분리, 재사용성을 위해 필수적
+- **useState와 useReducer**는 같은 메커니즘의 다른 인터페이스
+- 상태 관리 접근법은 **데이터 중심** 또는 **컴포넌트 중심**으로 나뉘며, 프로젝트 특성에 맞게 선택
+
+다음 글에서는 리렌더링 최적화와 Context의 함정을 다룹니다.

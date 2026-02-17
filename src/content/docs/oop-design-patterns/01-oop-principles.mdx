@@ -1,0 +1,270 @@
+---
+title: "OOP 4대 원칙"
+description: "캡슐화, 추상화, 상속, 다형성 - 객체 지향 프로그래밍의 4대 핵심 원칙을 TypeScript 예제와 함께 정리합니다."
+sidebar:
+  order: 1
+---
+
+객체 지향 프로그래밍(OOP)은 소프트웨어 공학에서 가장 널리 사용되는 패러다임입니다. GoF(Gang of Four) 디자인 패턴은 이 OOP를 기반으로 만들어졌으며, 생성 패턴 5개, 구조 패턴 7개, 행위 패턴 11개 총 23개의 패턴으로 구성됩니다. 이 글에서는 OOP의 4대 원칙을 살펴봅니다.
+
+## Interface
+
+OOP를 이해하기 전에 인터페이스 개념을 먼저 짚고 가겠습니다. 인터페이스란 독립되고 관계가 없는 시스템이 접촉하거나 통신이 일어나는 부분입니다. 타입만 같다면 어떤 기기가 연결되는지 신경 쓰지 않습니다.
+
+```typescript
+interface Animal {
+  name: string;
+  makeSound(): void;
+}
+
+class Dog implements Animal {
+  constructor(public name: string) {
+    this.name = name;
+  }
+
+  makeSound(): void {
+    console.log("멍멍");
+  }
+}
+
+class Cat implements Animal {
+  constructor(public name: string) {
+    this.name = name;
+  }
+
+  makeSound(): void {
+    console.log("냐옹");
+  }
+}
+```
+
+공통된 타입만 있다면 `implements`를 통해 연결할 수 있고, 각각 다른 동작을 수행합니다.
+
+## 캡슐화 (Encapsulation)
+
+캡슐화는 **관심사 분리와 데이터 은닉**입니다. 외부에서 내부의 상태(state)에 직접 접근하여 수정하는 것을 막고, 대신 getter/setter 메서드를 제공합니다.
+
+```typescript
+class BankAccount {
+  private _balance: number;
+
+  constructor(initialBalance: number) {
+    this._balance = initialBalance;
+  }
+
+  // Getter - read-only 속성
+  public get balance(): number {
+    return this._balance;
+  }
+
+  public deposit(amount: number): void {
+    if (amount < 0) throw new Error("Invalid deposit Amount");
+    this._balance += amount;
+  }
+
+  public withdraw(amount: number): void {
+    if (amount < 0) throw new Error("Invalid deposit Amount");
+    if (this._balance < amount) throw new Error("Insufficient Funds");
+    this._balance -= amount;
+  }
+}
+
+const myAccount = new BankAccount(1000);
+myAccount.balance = 20; // 에러 발생 - read-only
+myAccount.deposit(100);  // OK
+```
+
+### 실제 사례: Date 객체
+
+```typescript
+const now = new Date();
+now.getFullYear();
+now.getMonth();
+now.getDate();
+```
+
+JavaScript의 `Date`는 내부적으로 UNIX Epoch Time을 기반으로 계산합니다. 그러나 캡슐화 덕분에 이런 사실을 몰라도 됩니다. 메서드 내에서 처리될 뿐, 내부 구현을 알 필요가 없습니다.
+
+## 추상화 (Abstraction)
+
+추상화는 **복잡한 내부 구현을 숨기고 간단한 인터페이스를 제공**하는 것입니다.
+
+```typescript
+interface Shape {
+  area(): number;
+  perimeter(): number;
+}
+
+class Circle implements Shape {
+  constructor(private radius: number) {}
+
+  area(): number {
+    return Math.PI * this.radius ** 2;
+  }
+
+  perimeter(): number {
+    return 2 * Math.PI * this.radius;
+  }
+}
+
+class Rectangle implements Shape {
+  constructor(private width: number, private height: number) {}
+
+  area(): number {
+    return this.height * this.width;
+  }
+
+  perimeter(): number {
+    return 2 * (this.height + this.width);
+  }
+}
+
+function calculateTotalArea(shape: Shape): number {
+  return shape.area();
+}
+
+const circle = new Circle(3);
+const rectangle = new Rectangle(5, 10);
+
+console.log(calculateTotalArea(circle));    // Circle의 내부 계산을 몰라도 됨
+console.log(calculateTotalArea(rectangle)); // Rectangle도 마찬가지
+```
+
+### 실제 사례: TypeORM
+
+```javascript
+const userRepository = getRepository(User);
+const user = await userRepository.findOne({ id: 1 });
+```
+
+TypeORM에서 `userRepository`의 메서드를 사용하지만, 내부에서 어떤 데이터베이스를 사용하는지 알 필요가 없습니다. 필요한 데이터를 전달하고 적합한 메서드를 사용하면 됩니다.
+
+### 추상화의 장점
+
+1. 복잡한 디테일을 숨긴다
+2. 코드 수정이 애플리케이션에 영향을 끼치지 않는다 (정확한 리턴값만 있다면 내부 수정 가능)
+3. 클래스 재사용 가능
+4. 각각의 객체는 객체의 메서드를 관리해서 모듈화 가능
+5. state를 private으로 지정해서 숨길 수 있음 (보안)
+
+### OOP vs FP: 추상화 관점
+
+- **OOP**: 객체를 생성해서 그 안에서 변형하는 메서드를 추상화. 객체와 메서드가 모두 한 class에 포함
+- **FP**: 데이터는 따로 있고, 불변성을 이용해서 함수의 Input/Output으로 변형된 데이터를 생성. 원본 데이터는 유지하면서 `pipe()`, `compose()` 함수로 동작을 조합
+
+둘은 양자택일이 아니라 조합해서 사용할 수 있습니다.
+
+## 상속 (Inheritance)
+
+상속은 이미 알게 모르게 많이 사용하는 개념입니다. CSS의 폰트 관련 속성처럼, 부모의 특성을 자식이 물려받습니다.
+
+```typescript
+class Animal {
+  constructor(public name: string) {}
+
+  move(distance: number): void {
+    console.log(`${this.name} moved ${distance} meters.`);
+  }
+}
+
+class Dog extends Animal {
+  constructor(public name: string = "dog") {
+    super(name);
+  }
+}
+
+let myDog = new Dog();
+myDog.move(4); // "dog moved 4 meters."
+```
+
+### 실전 예시: 상품 계층
+
+```typescript
+class Product {
+  constructor(
+    public id: string,
+    public price: number,
+    public description: string
+  ) {}
+
+  display(): void {
+    console.log(`${this.id}: ${this.description} - ${this.price}`);
+  }
+}
+
+class Book extends Product {
+  constructor(
+    id: string, price: number, description: string,
+    public author: string,
+    public title: string
+  ) {
+    super(id, price, description);
+  }
+}
+
+class Electronic extends Product {
+  constructor(
+    id: string, price: number, description: string,
+    public brand: string,
+    public model: string
+  ) {
+    super(id, price, description);
+  }
+}
+```
+
+## 다형성 (Polymorphism)
+
+다형성은 OOP의 핵심 개념으로, superclass의 객체를 여러 다른 클래스처럼 다룰 수 있게 합니다.
+
+### 다형성의 종류
+
+1. **Subtype Polymorphism** - 상속 또는 구현 다형성
+2. **Parametric Polymorphism** - 제네릭
+3. **Ad hoc Polymorphism** - 함수/연산자 오버로딩
+
+### Express 미들웨어 예시
+
+```typescript
+import express, { Request, Response, NextFunction } from "express";
+
+const app = express();
+
+const middleware1 = (req: Request, res: Response, next: NextFunction) => {
+  console.log("Middleware 1");
+  next();
+};
+
+const middleware2 = (req: Request, res: Response, next: NextFunction) => {
+  console.log("Middleware 2");
+  next();
+};
+
+app.use(middleware1);
+app.use(middleware2);
+```
+
+같은 처리(미들웨어)에 대해 다형성을 줄 수 있습니다. 중간에 어떤 미들웨어를 사용하느냐에 따라 전혀 다른 결과를 얻습니다.
+
+### 다형성의 장점
+
+| 장점 | 설명 |
+|------|------|
+| Code Reusability | 코드 재사용성 |
+| Interface Consistency | 인터페이스 일관성 |
+| Robustness | 광범위한 상황 대응 |
+| Flexibility | 유연성 |
+| Scalability | 기존 타입 재사용으로 확장성 확보 |
+| Reduced Complexity | 복잡도 감소 |
+| Enhanced Collaboration | 개발자가 동시에 다른 시스템 부분도 작업 가능 |
+
+## 정리
+
+OOP의 4대 원칙은 서로 보완적으로 작동합니다:
+
+- **캡슐화**: 데이터를 보호하고 외부 접근을 제어
+- **추상화**: 복잡한 내부를 숨기고 간단한 인터페이스 제공
+- **상속**: 부모의 특성을 물려받아 코드 재사용
+- **다형성**: 같은 인터페이스로 다른 동작을 수행
+
+다음 글에서는 SOLID 원칙을 다룹니다.

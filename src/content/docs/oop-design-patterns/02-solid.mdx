@@ -1,0 +1,392 @@
+---
+title: "SOLID 원칙 완전 정복"
+description: "객체 지향 설계의 핵심인 SOLID 5대 원칙을 실전 TypeScript 예제와 함께 깊이 있게 다룹니다."
+sidebar:
+  order: 2
+---
+
+SOLID 원칙은 GoF 디자인 패턴과는 다르지만, 디자인 패턴의 **기초**가 되는 설계 원칙입니다. 이 글에서는 각 원칙을 실전 예제와 함께 살펴봅니다.
+
+## SOLID 개요
+
+| 원칙 | 이름 | 핵심 |
+|------|------|------|
+| **S** | Single Responsibility | 하나의 클래스는 하나의 책임만 |
+| **O** | Open-Closed | 확장에 열려 있고, 수정에 닫혀 있어야 |
+| **L** | Liskov Substitution | 자식은 부모를 대체할 수 있어야 |
+| **I** | Interface Segregation | 사용하지 않는 메서드에 의존하지 말아야 |
+| **D** | Dependency Inversion | 고수준/저수준 모듈 모두 추상화에 의존 |
+
+## SRP: 단일 책임 원칙
+
+구현해야 하는 법칙이라기보다는 원리에 가깝지만, 유념하면서 프로그래밍하면 매우 유용합니다. 클래스를 분리하고 격리(isolate)하기 위한 원칙으로, 이를 통해 의존성을 낮춥니다.
+
+### 잘못된 예시
+
+```typescript
+// User 클래스 안에 유저 인증 메서드를 같이 넣는 경우
+class User {
+  constructor(name: string, email: string) {}
+  userAuthentication() {}
+}
+```
+
+User와 인증은 분리되어야 합니다.
+
+### 올바른 분리
+
+```typescript
+class User {
+  constructor(name: string, email: string) {}
+}
+
+class UserAuthentication {
+  constructor(user: User) {}
+  authentication(password: string) {
+    // implementation
+  }
+}
+```
+
+User 클래스를 `UserAuthentication`에 주입해서 연결합니다. 이 경우 다른 User 타입과도 호환 가능해집니다.
+
+### 실전 예시: 블로그 포스트
+
+```typescript
+// Before - 너무 많은 책임
+class BlogPost {
+  title: string;
+  content: string;
+
+  constructor(title: string, content: string) {
+    this.title = title;
+    this.content = content;
+  }
+
+  createPost() {}
+  updatePost() {}
+  deletePost() {}
+  displayHTML(targetNode: HTMLElement) { /* ... */ }
+}
+```
+
+지나치게 세분화하는 것도 과도한 복잡성을 초래합니다. **데이터 관리 / 조작 / 표시** 3가지로 분리하는 것이 적절합니다:
+
+```typescript
+// 데이터 관련 로직
+class BlogPost {
+  constructor(public title: string, public content: string) {}
+}
+
+// 블로그 포스트 조작 로직
+class BlogPostService {
+  create(post: BlogPost) {}
+  update(post: BlogPost, updatedData: Partial<BlogPost>) {}
+  delete(post: BlogPost) {}
+}
+
+// 블로그 포스트 표시 로직
+class BlogPostRenderer {
+  renderHTML(post: BlogPost, targetNode: HTMLElement) {
+    const wrapper = document.createElement("div");
+    const title = document.createElement("h1");
+    title.textContent = post.title;
+    const content = document.createElement("p");
+    content.textContent = post.content;
+    wrapper.append(title, content);
+    targetNode.append(wrapper);
+  }
+}
+```
+
+### SRP의 장점
+
+- **유지보수성 향상**: 특정 기능 변경 시 관련 코드만 수정
+- **코드 가독성 증가**: 각 클래스가 명확한 역할
+- **테스트 용이성**: 독립적인 단위 테스트 가능
+- **재사용성 증가**: 불필요한 의존성 제거
+- **확장성 향상**: OCP를 준수하기 쉬워짐
+
+## OCP: 개방-폐쇄 원칙
+
+확장에는 열려 있어야 하고, 수정에는 닫혀 있어야 합니다. 기존 코드를 수정하지 않고 새로운 기능을 추가할 수 있게 해야 합니다.
+
+### 문제 상황
+
+```typescript
+class Discount {
+  giveDiscount(customerType: "premium" | "regular"): number {
+    if (customerType === "regular") return 10;
+    return 20;
+  }
+}
+// Gold 타입 추가 시 giveDiscount()를 수정해야 함
+```
+
+### OCP 적용
+
+```typescript
+interface Customer {
+  giveDiscount(): number;
+}
+
+class RegularCustomer implements Customer {
+  giveDiscount(): number { return 10; }
+}
+
+class PremiumCustomer implements Customer {
+  giveDiscount(): number { return 20; }
+}
+
+class Discount {
+  giveDiscount(customer: Customer): number {
+    return customer.giveDiscount();
+  }
+}
+
+// 새 고객 유형 추가 - 기존 코드 수정 없음!
+class GoldCustomer implements Customer {
+  giveDiscount(): number { return 30; }
+}
+
+let goldCustomer = new GoldCustomer();
+let discount = new Discount();
+discount.giveDiscount(goldCustomer); // 30
+```
+
+### OCP의 장점
+
+- 버그 찾기 쉬움
+- 코드 재사용성 향상
+- 새 기능 추가 시 기존 함수 수정 불필요
+
+> interface를 단순히 React prop 타입이나 객체 타입 지정에만 사용하기보다, 내부 구현이 어떻든 결과 타입을 맞추도록 구현하는 방향으로 활용해야 합니다.
+
+## LSP: 리스코프 치환 원칙
+
+자식 클래스는 언제나 부모 클래스를 대체할 수 있어야 합니다. 자식 클래스는 부모의 동작을 그대로 유지하며 추가 기능만 제공해야 합니다.
+
+```typescript
+abstract class Shape {
+  abstract calculateArea(): number;
+}
+
+class Rectangle extends Shape {
+  constructor(public width: number, public height: number) {
+    super();
+  }
+
+  calculateArea(): number {
+    return this.height * this.width;
+  }
+}
+
+class Square extends Shape {
+  constructor(public side: number) {
+    super();
+  }
+
+  calculateArea(): number {
+    return this.side ** 2;
+  }
+}
+
+// Shape 타입이면 어떤 자식이든 동일하게 사용 가능
+function area(shape: Shape) {
+  return shape.calculateArea();
+}
+
+area(new Rectangle(10, 12)); // OK
+area(new Square(9));          // OK
+```
+
+### 실전 예시: 결제 시스템
+
+```typescript
+abstract class Payment {
+  abstract processPayment(amount: number): void;
+}
+
+class CreditCard extends Payment {
+  processPayment(amount: number): void {
+    console.log(`Processing Credit Card - Amount ${amount}`);
+  }
+}
+
+class Paypal extends Payment {
+  processPayment(amount: number): void {
+    console.log(`Processing Paypal - Amount ${amount}`);
+  }
+}
+
+class Bitcoin extends Payment {
+  processPayment(amount: number): void {
+    console.log(`Processing Bitcoin - Amount ${amount}`);
+  }
+}
+
+// 부모 타입으로 모든 자식 처리
+function executePayments(payment: Payment, amount: number) {
+  return payment.processPayment(amount);
+}
+
+executePayments(new Paypal(), 1000);
+executePayments(new CreditCard(), 9000);
+executePayments(new Bitcoin(), 5000);
+```
+
+## ISP: 인터페이스 분리 원칙
+
+클라이언트는 자신이 사용하지 않는 메서드에 의존하지 않아야 합니다.
+
+### 문제 상황
+
+```typescript
+interface Machine {
+  print(document: Document): void;
+  scan(document: Document): void;
+  fax(document: Document): void;
+}
+
+// 하나의 기능만 필요한데 모든 메서드를 구현해야 함
+class SimplePrinter implements Machine {
+  print(document: Document): void { /* OK */ }
+  scan(document: Document): void { /* 필요 없음... */ }
+  fax(document: Document): void { /* 필요 없음... */ }
+}
+```
+
+> `Pick<Machine, "print">`를 사용할 수도 있지만, `Pick`은 기존 타입에서 필요한 것만 가져오는 것이고, 인터페이스를 분리하는 것은 처음부터 확장성을 고려하는 설계입니다.
+
+### ISP 적용
+
+```typescript
+interface Printer {
+  print(document: Document): void;
+}
+
+interface Scanner {
+  scan(document: Document): void;
+}
+
+interface FaxMachine {
+  fax(document: Document): void;
+}
+
+// 모든 기능이 필요한 경우 - 다중 구현
+class MultiFunctionPrinter implements Printer, Scanner, FaxMachine {
+  print(document: Document): void { console.log("printing"); }
+  scan(document: Document): void { console.log("scanning"); }
+  fax(document: Document): void { console.log("sending a fax"); }
+}
+
+// 단일 기능만 필요한 경우
+class SimplePrinter implements Printer {
+  print(document: Document): void { console.log("printing"); }
+}
+```
+
+### ISP의 특징
+
+- 한 인터페이스의 수정이 다른 클래스에 영향을 주지 않음
+- `implements`는 `extends`와 달리 **다중 상속이 지원**됨
+- 이를 통한 캡슐화로 어디서 상속받았는지 추적이 쉬움
+
+## DIP: 의존성 역전 원칙
+
+고수준 모듈은 저수준 모듈에 의존하지 않고, 둘 다 **추상화에 의존**해야 합니다.
+
+### 문제 상황
+
+```typescript
+class MySqlDatabase {
+  save(data: string): void {}
+}
+
+class HighLevelModule {
+  constructor(private database: MySqlDatabase) {}
+  execute(data: string) {
+    this.database.save(data);
+  }
+}
+// 데이터베이스를 변경하면 HighLevelModule도 수정해야 함
+```
+
+### DIP 적용
+
+```typescript
+interface IDatabase {
+  save(data: string): void;
+}
+
+class MySqlDatabase implements IDatabase {
+  save(data: string): void {
+    console.log(`${data} is being saved to MySQL`);
+  }
+}
+
+class MongoDBDatabase implements IDatabase {
+  save(data: string): void {
+    console.log(`${data} is being saved to MongoDB`);
+  }
+}
+
+class HighLevelModule {
+  constructor(private database: IDatabase) {} // 추상화에 의존
+  execute(data: string) {
+    this.database.save(data);
+  }
+}
+
+// 데이터베이스 교체가 자유로움
+const module1 = new HighLevelModule(new MongoDBDatabase());
+const module2 = new HighLevelModule(new MySqlDatabase());
+```
+
+### 실전 회고: 전역 상태 관리에 DIP 적용
+
+싱글턴으로 전역 상태를 구현할 때 Zustand와의 의존성을 낮추는 방법으로 DIP를 적용할 수 있습니다:
+
+```typescript
+interface GlobalState {
+  get<T>(key: string): T;
+  set(key: string, data: string): void;
+}
+
+class ZustandStore implements GlobalState {
+  get<T>(key: string): T { return useStore()[key]; }
+  set(key: string, data: string) { useStore()[key](data); }
+}
+
+class RecoilStore implements GlobalState {
+  get<T>(key: string): T { return useRecoilValue(key); }
+  set(key: string, data: string) { useSetRecoilState(key)(data); }
+}
+
+class StateManager {
+  constructor(
+    private initialValue: Record<string, any>,
+    private globalState: GlobalState
+  ) {}
+
+  getState(key: string) { return this.globalState.get(key); }
+  save(key: string, data: string) { this.globalState.set(key, data); }
+}
+
+// 상태 관리 라이브러리 교체가 자유로움
+const manager = new StateManager(initialState, new ZustandStore());
+```
+
+인터페이스를 통한 추상화로 새로운 타입을 만들어 constructor로 넘겨주면, 라이브러리 교체가 자유로워집니다. SRP에 따라 컨트롤러와 상태 관리 로직도 분리할 수 있습니다.
+
+## 정리
+
+SOLID 원칙은 코드를 **명확하고, 수정과 확장에 강한 구조**로 만드는 기반입니다:
+
+- **SRP**: 클래스의 책임을 명확히 분리
+- **OCP**: 인터페이스를 활용한 확장
+- **LSP**: 자식이 부모를 안전하게 대체
+- **ISP**: 필요한 인터페이스만 구현
+- **DIP**: 추상화에 의존하여 유연성 확보
+
+다음 글에서는 이 원칙들이 실제로 적용되는 생성 패턴(Factory, Abstract Factory, Builder, Singleton, Prototype)을 다룹니다.
