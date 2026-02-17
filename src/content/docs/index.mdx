@@ -1,0 +1,46 @@
+---
+title: Heon Blog
+description: 프론트엔드 개발 학습 기록 블로그
+template: splash
+hero:
+  tagline: React, JavaScript, TypeScript 심화 학습을 기록합니다.
+  actions:
+    - text: React 디자인 패턴
+      link: /heon-blog/react-design-patterns/01-composition/
+      icon: right-arrow
+    - text: JavaScript 심화
+      link: /heon-blog/javascript-deep-dive/01-prototype/
+      icon: right-arrow
+      variant: minimal
+---
+
+import { Card, CardGrid } from '@astrojs/starlight/components';
+
+## 시리즈
+
+<CardGrid>
+	<Card title="⚛ React 디자인 패턴 완전 정복" icon="rocket">
+		컴포지션부터 API 레이어 설계까지, React 설계 패턴 12편
+	</Card>
+	<Card title="⚛ React 내부 동작 이해" icon="puzzle">
+		Virtual DOM, Reconciliation, Fiber 아키텍처 5편
+	</Card>
+	<Card title="📜 JavaScript 심화" icon="open-book">
+		Prototype, Closure, 비동기, Timer까지 핵심 개념 8편
+	</Card>
+	<Card title="🔷 TypeScript 타입 챌린지" icon="star">
+		Generic, 유틸리티 타입, 타입 챌린지 풀이 6편
+	</Card>
+	<Card title="λ 함수형 프로그래밍" icon="random">
+		순수 함수, Currying, 함수 합성, 계층형 설계 5편
+	</Card>
+	<Card title="🏛 OOP & 디자인 패턴" icon="setting">
+		4대 원칙, SOLID, 생성/구조 패턴 4편
+	</Card>
+	<Card title="▲ Next.js 실전 가이드" icon="right-arrow">
+		라우팅, 캐싱, 데이터 페칭, 성능 최적화 4편
+	</Card>
+	<Card title="🔄 상태 관리 비교 분석" icon="list-format">
+		React 상태 관리 접근법과 Zustand vs Redux 3편
+	</Card>
+</CardGrid>
