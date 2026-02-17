@@ -14,33 +14,17 @@ hero:
       variant: minimal
 ---
 
-import { Card, CardGrid } from '@astrojs/starlight/components';
+import { LinkCard, CardGrid } from '@astrojs/starlight/components';
 
 ## 시리즈
 
 <CardGrid>
-	<Card title="⚛ React 디자인 패턴 완전 정복" icon="rocket">
-		컴포지션부터 API 레이어 설계까지, React 설계 패턴 12편
-	</Card>
-	<Card title="⚛ React 내부 동작 이해" icon="puzzle">
-		Virtual DOM, Reconciliation, Fiber 아키텍처 5편
-	</Card>
-	<Card title="📜 JavaScript 심화" icon="open-book">
-		Prototype, Closure, 비동기, Timer까지 핵심 개념 8편
-	</Card>
-	<Card title="🔷 TypeScript 타입 챌린지" icon="star">
-		Generic, 유틸리티 타입, 타입 챌린지 풀이 6편
-	</Card>
-	<Card title="λ 함수형 프로그래밍" icon="random">
-		순수 함수, Currying, 함수 합성, 계층형 설계 5편
-	</Card>
-	<Card title="🏛 OOP & 디자인 패턴" icon="setting">
-		4대 원칙, SOLID, 생성/구조 패턴 4편
-	</Card>
-	<Card title="▲ Next.js 실전 가이드" icon="right-arrow">
-		라우팅, 캐싱, 데이터 페칭, 성능 최적화 4편
-	</Card>
-	<Card title="🔄 상태 관리 비교 분석" icon="list-format">
-		React 상태 관리 접근법과 Zustand vs Redux 3편
-	</Card>
+	<LinkCard title="⚛ React 디자인 패턴 완전 정복" href="/blog/react-design-patterns/01-composition/" description="컴포지션부터 API 레이어 설계까지, React 설계 패턴 12편" />
+	<LinkCard title="⚛ React 내부 동작 이해" href="/blog/react-internals/01-virtual-dom/" description="Virtual DOM, Reconciliation, Fiber 아키텍처 5편" />
+	<LinkCard title="📜 JavaScript 심화" href="/blog/javascript-deep-dive/01-prototype/" description="Prototype, Closure, 비동기, Timer까지 핵심 개념 8편" />
+	<LinkCard title="🔷 TypeScript 타입 챌린지" href="/blog/typescript-challenges/01-generic/" description="Generic, 유틸리티 타입, 타입 챌린지 풀이 6편" />
+	<LinkCard title="λ 함수형 프로그래밍" href="/blog/functional-programming/01-fp-basics/" description="순수 함수, Currying, 함수 합성, 계층형 설계 5편" />
+	<LinkCard title="🏛 OOP & 디자인 패턴" href="/blog/oop-design-patterns/01-oop-principles/" description="4대 원칙, SOLID, 생성/구조 패턴 4편" />
+	<LinkCard title="▲ Next.js 실전 가이드" href="/blog/nextjs-guide/01-routing/" description="라우팅, 캐싱, 데이터 페칭, 성능 최적화 4편" />
+	<LinkCard title="🔄 상태 관리 비교 분석" href="/blog/state-management/01-state-approaches/" description="React 상태 관리 접근법과 Zustand vs Redux 3편" />
 </CardGrid>
