@@ -4,7 +4,7 @@
 
 프론트엔드 개발 학습을 기록하는 기술 블로그입니다.
 
-**https://JeongHeonK.github.io/heon-blog/**
+**https://JeongHeonK.github.io/blog/**
 
 ## 시리즈
 
@@ -29,7 +29,7 @@
 
 ```bash
 npm install
-npm run dev        # http://localhost:4321/heon-blog/
+npm run dev        # http://localhost:4321/blog/
 npm run build      # 프로덕션 빌드
 npm run preview    # 빌드 미리보기
 ```

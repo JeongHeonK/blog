@@ -5,7 +5,7 @@ import starlight from '@astrojs/starlight';
 // https://astro.build/config
 export default defineConfig({
 	site: 'https://JeongHeonK.github.io',
-	base: '/heon-blog',
+	base: '/blog',
 	integrations: [
 		starlight({
 			title: 'Heon Blog',
@@ -77,7 +77,7 @@ export default defineConfig({
 					tag: 'meta',
 					attrs: {
 						property: 'og:image',
-						content: '/heon-blog/og-image.png',
+						content: '/blog/og-image.png',
 					},
 				},
 			],
