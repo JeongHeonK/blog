@@ -4,38 +4,42 @@
 		sans-serif;
 	--sl-font-mono: 'JetBrains Mono', ui-monospace, 'Cascadia Code',
 		'Fira Code', Menlo, monospace;
+	--sl-content-width: 45rem;
 }
 
-/* === Light Mode Colors (from Stitch design) === */
+/* === Dark Mode (Starlight default: :root)
+     Scale: white=lightest → gray-1 → ... → gray-6 → black=darkest === */
 :root {
-	--sl-color-accent-low: #dbeafe;
-	--sl-color-accent: #137fec;
-	--sl-color-accent-high: #0f5bb5;
-
-	--sl-color-white: #ffffff;
-	--sl-color-gray-1: #f8fafc;
-	--sl-color-gray-2: #e2e8f0;
-	--sl-color-gray-3: #94a3b8;
-	--sl-color-gray-4: #64748b;
-	--sl-color-gray-5: #1e293b;
-	--sl-color-gray-6: #0f172a;
-	--sl-color-black: #020617;
-}
-
-/* === Dark Mode Colors (from Stitch design) === */
-:root[data-theme='dark'] {
 	--sl-color-accent-low: #1a2a3e;
 	--sl-color-accent: #137fec;
 	--sl-color-accent-high: #93c5fd;
 
-	--sl-color-white: #101922;
-	--sl-color-gray-1: #111a22;
-	--sl-color-gray-2: #233648;
-	--sl-color-gray-3: #546b82;
-	--sl-color-gray-4: #92adc9;
-	--sl-color-gray-5: #cbd5e1;
-	--sl-color-gray-6: #e2e8f0;
-	--sl-color-black: #f8fafc;
+	--sl-color-white: #f8fafc;
+	--sl-color-gray-1: #e2e8f0;
+	--sl-color-gray-2: #cbd5e1;
+	--sl-color-gray-3: #92adc9;
+	--sl-color-gray-4: #546b82;
+	--sl-color-gray-5: #233648;
+	--sl-color-gray-6: #111a22;
+	--sl-color-black: #101922;
+}
+
+/* === Light Mode (Starlight: [data-theme='light'])
+     Scale INVERTED: white=darkest → gray-1 → ... → gray-6 → black=lightest === */
+:root[data-theme='light'] {
+	--sl-color-accent-low: #dbeafe;
+	--sl-color-accent: #137fec;
+	--sl-color-accent-high: #0f5bb5;
+
+	--sl-color-white: #020617;
+	--sl-color-gray-1: #0f172a;
+	--sl-color-gray-2: #1e293b;
+	--sl-color-gray-3: #64748b;
+	--sl-color-gray-4: #94a3b8;
+	--sl-color-gray-5: #e2e8f0;
+	--sl-color-gray-6: #f8fafc;
+	--sl-color-gray-7: #f8fafc;
+	--sl-color-black: #ffffff;
 }
 
 /* === Typography === */
@@ -61,11 +65,6 @@ body {
 	margin-block-end: 0.6em;
 }
 
-/* === Content Width === */
-.content-panel {
-	max-width: 720px;
-}
-
 /* === Code Block Enhancements === */
 .sl-markdown-content pre {
 	border-radius: 8px;
@@ -83,25 +82,24 @@ nav.sidebar .top-level > li > details > summary {
 	font-weight: 600;
 }
 
-/* Sidebar active item left border */
 nav.sidebar a[aria-current='page'] {
 	border-inline-start: 3px solid var(--sl-color-accent);
 	padding-inline-start: 0.75rem;
 	font-weight: 700;
 }
 
-/* === Inline Code in Light Mode === */
-:root .sl-markdown-content :not(pre) > code {
-	background-color: #f1f5f9;
-	color: #db2777;
-	border: 1px solid #e2e8f0;
-}
-
-/* === Inline Code in Dark Mode === */
-:root[data-theme='dark'] .sl-markdown-content :not(pre) > code {
+/* === Inline Code (Dark Mode - default) === */
+.sl-markdown-content :not(pre) > code {
 	background-color: #233648;
 	color: #f0abfc;
 	border: 1px solid #334155;
+}
+
+/* === Inline Code (Light Mode) === */
+:root[data-theme='light'] .sl-markdown-content :not(pre) > code {
+	background-color: #f1f5f9;
+	color: #db2777;
+	border: 1px solid #e2e8f0;
 }
 
 /* === Callout / Aside Styling === */

@@ -9,9 +9,12 @@ export default defineConfig({
 	integrations: [
 		starlight({
 			title: 'Heon Blog',
-			defaultLocale: 'ko',
+			defaultLocale: 'root',
 			locales: {
-				ko: { label: '한국어', lang: 'ko' },
+				root: { label: '한국어', lang: 'ko' },
+			},
+			components: {
+				ThemeSelect: './src/components/ThemeSelect.astro',
 			},
 			social: [
 				{ icon: 'github', label: 'GitHub', href: 'https://github.com/JeongHeonK' },
