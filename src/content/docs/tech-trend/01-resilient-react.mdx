@@ -1,0 +1,238 @@
+---
+title: "깨지지 않는 React 컴포넌트 만들기"
+description: "Shu Ding이 제시한 10가지 방어적 React 컴포넌트 설계 원칙을 정리합니다."
+sidebar:
+  order: 1
+---
+
+React 컴포넌트를 작성할 때, 단순히 "동작하는 코드"와 "깨지지 않는 코드" 사이에는 큰 차이가 있다. Vercel의 Shu Ding은 컴포넌트가 다양한 환경과 조건에서도 안정적으로 동작하기 위한 10가지 원칙을 제시했다.
+
+## Server-Proof
+
+컴포넌트가 서버 환경에서도 안전하게 렌더링되어야 한다. `window`, `document` 같은 브라우저 전용 API에 직접 의존하면 SSR에서 터진다.
+
+```tsx
+// ❌ 서버에서 터짐
+function Component() {
+  const width = window.innerWidth;
+  return <div>{width}</div>;
+}
+
+// ✅ 서버에서도 안전
+function Component() {
+  const [width, setWidth] = useState(0);
+
+  useEffect(() => {
+    setWidth(window.innerWidth);
+  }, []);
+
+  return <div>{width}</div>;
+}
+```
+
+핵심은 **렌더링 단계에서 브라우저 API를 호출하지 않는 것**이다. `useEffect`나 이벤트 핸들러 안에서만 접근하면 된다.
+
+## Hydration-Proof
+
+서버에서 렌더링한 HTML과 클라이언트에서 hydration 시 생성하는 DOM이 일치해야 한다. 불일치하면 React가 경고를 띄우고, 최악의 경우 UI가 깨진다.
+
+```tsx
+// ❌ hydration 불일치
+function Component() {
+  return <div>{Date.now()}</div>;
+}
+
+// ✅ hydration 안전
+function Component() {
+  const [time, setTime] = useState<number | null>(null);
+
+  useEffect(() => {
+    setTime(Date.now());
+  }, []);
+
+  return <div>{time ?? '로딩 중...'}</div>;
+}
+```
+
+`Date.now()`, `Math.random()` 등 호출 시점에 따라 값이 달라지는 것은 렌더링 단계에서 사용하면 안 된다.
+
+## Instance-Proof
+
+같은 컴포넌트가 여러 번 렌더링되어도 서로 간섭하지 않아야 한다. 모듈 수준 변수를 공유하면 인스턴스 간 상태가 섞인다.
+
+```tsx
+// ❌ 인스턴스 간 상태 공유
+let count = 0;
+
+function Counter() {
+  return <button onClick={() => count++}>{count}</button>;
+}
+
+// ✅ 각 인스턴스가 독립적
+function Counter() {
+  const [count, setCount] = useState(0);
+  return <button onClick={() => setCount((c) => c + 1)}>{count}</button>;
+}
+```
+
+모듈 레벨 변수는 **읽기 전용 설정값**에만 사용하고, 가변 상태는 항상 `useState`나 `useRef`로 관리한다.
+
+## Concurrent-Proof
+
+React 18의 Concurrent Mode에서는 렌더링이 중단되고 재개될 수 있다. 렌더링 중 부수 효과를 일으키면 예측 불가능한 동작이 발생한다.
+
+```tsx
+// ❌ 렌더링 중 부수 효과
+function Component() {
+  document.title = '새 제목'; // 렌더링이 중단되면?
+  return <div>hello</div>;
+}
+
+// ✅ 부수 효과는 Effect에서
+function Component() {
+  useEffect(() => {
+    document.title = '새 제목';
+  }, []);
+
+  return <div>hello</div>;
+}
+```
+
+**렌더링은 순수 함수**여야 한다. 외부 세계를 변경하는 모든 작업은 `useEffect`로 옮긴다.
+
+## Composition-Proof
+
+컴포넌트가 어떤 부모 아래에 놓이든 동작이 달라지지 않아야 한다. 전역 상태나 특정 DOM 구조에 의존하면 합성이 어려워진다.
+
+```tsx
+// ❌ 특정 DOM 구조에 의존
+function List() {
+  const items = document.querySelectorAll('.list-item');
+  return <ul>{/* ... */}</ul>;
+}
+
+// ✅ props/context로 데이터 전달
+function List({ items }: { items: string[] }) {
+  return (
+    <ul>
+      {items.map((item) => (
+        <li key={item}>{item}</li>
+      ))}
+    </ul>
+  );
+}
+```
+
+데이터는 항상 **React의 데이터 흐름**(props, context)을 통해 받아야 한다.
+
+## Portal-Proof
+
+`createPortal`로 DOM 트리 밖에 렌더링해도 이벤트 버블링, 컨텍스트 등이 정상 동작해야 한다. 포털 내부에서 CSS 상속이 끊기는 점을 주의해야 한다.
+
+```tsx
+// 포털에서도 안전한 컴포넌트
+function Tooltip({ children }: { children: React.ReactNode }) {
+  return createPortal(
+    <div style={{ position: 'fixed' }}>{children}</div>,
+    document.body
+  );
+}
+```
+
+포털을 사용할 때는 **스타일 상속이 끊긴다**는 점을 인지하고, 필요한 스타일을 명시적으로 지정한다.
+
+## Transition-Proof
+
+`useTransition`으로 래핑된 상태 업데이트에서도 올바르게 동작해야 한다. Transition 중에는 이전 상태로 렌더링이 계속될 수 있다.
+
+```tsx
+function SearchResults({ query }: { query: string }) {
+  // ✅ query가 이전 값으로 렌더링될 수 있음을 인지
+  // 렌더링 결과가 query에만 의존하면 안전
+  const results = useMemo(() => filterResults(query), [query]);
+  return <ul>{results.map(/* ... */)}</ul>;
+}
+```
+
+컴포넌트가 **주어진 props에 대해 항상 동일한 결과**를 반환하면 Transition에 안전하다.
+
+## Activity-Proof
+
+React의 `<Activity>` API(이전 `<Offscreen>`)에서는 컴포넌트가 숨겨졌다가 다시 보일 수 있다. `useEffect`의 cleanup과 re-run이 올바르게 동작해야 한다.
+
+```tsx
+// ✅ cleanup이 올바른 Effect
+function Timer() {
+  const [count, setCount] = useState(0);
+
+  useEffect(() => {
+    const id = setInterval(() => {
+      setCount((c) => c + 1);
+    }, 1000);
+
+    return () => clearInterval(id); // 숨겨질 때 정리
+  }, []);
+
+  return <div>{count}</div>;
+}
+```
+
+`useEffect`에서 **항상 cleanup 함수를 반환**하는 습관을 들이면 Activity 전환에도 안전하다.
+
+## Leak-Proof
+
+컴포넌트가 언마운트된 후에도 리소스가 남아있으면 안 된다. 타이머, 이벤트 리스너, 구독 등을 정리하지 않으면 메모리 누수가 발생한다.
+
+```tsx
+// ❌ 메모리 누수
+function Component() {
+  useEffect(() => {
+    window.addEventListener('resize', handleResize);
+    // cleanup 없음!
+  }, []);
+}
+
+// ✅ 누수 방지
+function Component() {
+  useEffect(() => {
+    const controller = new AbortController();
+    window.addEventListener('resize', handleResize, {
+      signal: controller.signal,
+    });
+
+    return () => controller.abort();
+  }, []);
+}
+```
+
+`AbortController`를 활용하면 여러 이벤트 리스너를 한 번에 정리할 수 있어 편리하다.
+
+## Future-Proof
+
+React의 미래 기능(React Compiler, Server Components 등)과 호환되도록 작성한다. 앞선 9가지 원칙을 모두 지키면 자연스럽게 달성된다.
+
+핵심 규칙:
+
+- 렌더링은 순수하게 유지
+- 부수 효과는 Effect에서만
+- 상태는 React가 관리하게
+- cleanup을 항상 작성
+
+## 정리
+
+| 원칙 | 핵심 질문 |
+|------|----------|
+| Server-Proof | 서버에서 렌더링해도 터지지 않는가? |
+| Hydration-Proof | 서버/클라이언트 결과가 일치하는가? |
+| Instance-Proof | 여러 인스턴스가 독립적인가? |
+| Concurrent-Proof | 렌더링 중 부수 효과가 없는가? |
+| Composition-Proof | 어디에 놓아도 동작하는가? |
+| Portal-Proof | 포털에서도 정상 동작하는가? |
+| Transition-Proof | Transition 중에도 올바른가? |
+| Activity-Proof | 숨겼다 보여도 문제없는가? |
+| Leak-Proof | 언마운트 후 리소스가 정리되는가? |
+| Future-Proof | React 미래 기능과 호환되는가? |
+
+"깨지지 않는 컴포넌트"는 결국 **React의 규칙을 지키는 컴포넌트**다. 렌더링을 순수하게 유지하고, 부수 효과를 올바른 위치에서 관리하며, cleanup을 빠뜨리지 않으면 대부분의 원칙이 자연스럽게 충족된다.
+
+> 출처: [Shu Ding — "Resilient Components"](https://shud.in)
