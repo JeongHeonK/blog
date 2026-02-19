@@ -73,7 +73,7 @@ export default defineConfig({
 				},
 				{
 					label: '💡 프론트엔드 실무 팁',
-					autogenerate: { directory: 'tech-trend' },
+					autogenerate: { directory: 'frontend-tips' },
 					collapsed: true,
 				},
 				{
