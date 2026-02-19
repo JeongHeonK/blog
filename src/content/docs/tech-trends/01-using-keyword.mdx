@@ -1,0 +1,239 @@
+---
+title: "JavaScript using 키워드 — 명시적 리소스 관리"
+description: "TC39 Stage 3 제안인 Explicit Resource Management와 using 키워드를 정리합니다."
+sidebar:
+  order: 1
+---
+
+JavaScript에는 오랫동안 "리소스를 열었으면 닫아라"를 강제하는 문법이 없었다. 파일 핸들, 데이터베이스 연결, 이벤트 리스너 — 모두 개발자가 수동으로 정리해야 했다. TC39의 **Explicit Resource Management** 제안은 `using` 키워드로 이 문제를 해결한다.
+
+## 현재의 리소스 관리
+
+JavaScript에서 리소스 정리는 대부분 암묵적이거나, 개발자의 기억에 의존한다.
+
+```javascript
+// ❌ 에러가 나면 리소스가 정리되지 않음
+const file = await openFile('data.txt');
+const data = await file.read();
+await processData(data);
+file.close(); // 위에서 에러가 나면 여기까지 도달 못함
+```
+
+`try/finally`로 감싸면 되지만, 코드가 금방 지저분해진다.
+
+```javascript
+// ✅ 안전하지만 장황함
+const file = await openFile('data.txt');
+try {
+  const data = await file.read();
+  await processData(data);
+} finally {
+  file.close();
+}
+```
+
+리소스가 여러 개면 중첩 `try/finally`의 늪에 빠진다.
+
+## Symbol.dispose — 정리 프로토콜 표준화
+
+`using` 키워드의 핵심은 `Symbol.dispose`라는 새로운 well-known symbol이다. 객체에 이 메서드를 구현하면 "이 객체는 정리가 필요하다"고 선언하는 것이다.
+
+```javascript
+class FileHandle {
+  #handle;
+
+  constructor(handle) {
+    this.#handle = handle;
+  }
+
+  read() {
+    return this.#handle.read();
+  }
+
+  [Symbol.dispose]() {
+    this.#handle.close();
+    console.log('파일 핸들 정리됨');
+  }
+}
+```
+
+비동기 정리가 필요하면 `Symbol.asyncDispose`를 사용한다.
+
+```javascript
+class DatabaseConnection {
+  #connection;
+
+  constructor(connection) {
+    this.#connection = connection;
+  }
+
+  async query(sql) {
+    return this.#connection.query(sql);
+  }
+
+  async [Symbol.asyncDispose]() {
+    await this.#connection.close();
+    console.log('DB 연결 종료됨');
+  }
+}
+```
+
+## using 키워드
+
+`using`으로 선언한 변수는 **스코프를 벗어날 때 자동으로 `[Symbol.dispose]()`가 호출**된다.
+
+```javascript
+function processFile() {
+  using file = new FileHandle(openFileSync('data.txt'));
+
+  const data = file.read();
+  processData(data);
+
+  // 함수가 끝나면 file[Symbol.dispose]()가 자동 호출
+  // 에러가 발생해도 호출됨
+}
+```
+
+비동기 버전은 `await using`을 사용한다.
+
+```javascript
+async function queryDatabase() {
+  await using db = new DatabaseConnection(await connect());
+
+  const users = await db.query('SELECT * FROM users');
+  return users;
+
+  // 함수가 끝나면 await db[Symbol.asyncDispose]() 자동 호출
+}
+```
+
+## 실전 예시
+
+### 이벤트 리스너 자동 정리
+
+```javascript
+function createAutoCleanupListener(target, event, handler) {
+  target.addEventListener(event, handler);
+
+  return {
+    [Symbol.dispose]() {
+      target.removeEventListener(event, handler);
+    },
+  };
+}
+
+function setupUI() {
+  using listener = createAutoCleanupListener(
+    document.getElementById('btn'),
+    'click',
+    handleClick
+  );
+
+  // 이 스코프가 끝나면 리스너가 자동으로 제거됨
+}
+```
+
+### AbortController와 함께
+
+```javascript
+function createManagedAbortController() {
+  const controller = new AbortController();
+
+  return {
+    signal: controller.signal,
+    [Symbol.dispose]() {
+      controller.abort();
+    },
+  };
+}
+
+async function fetchWithTimeout() {
+  using aborter = createManagedAbortController();
+
+  const response = await fetch('/api/data', {
+    signal: aborter.signal,
+  });
+
+  return response.json();
+  // 스코프 종료 시 자동으로 abort
+}
+```
+
+### 타이머 정리
+
+```javascript
+function createManagedInterval(callback, ms) {
+  const id = setInterval(callback, ms);
+
+  return {
+    [Symbol.dispose]() {
+      clearInterval(id);
+    },
+  };
+}
+
+function startPolling() {
+  using poller = createManagedInterval(() => {
+    console.log('polling...');
+  }, 1000);
+
+  // 스코프가 끝나면 interval이 자동으로 정리됨
+}
+```
+
+## DisposableStack — 여러 리소스 한 번에 관리
+
+리소스가 여러 개일 때 `DisposableStack`으로 묶어서 관리할 수 있다.
+
+```javascript
+function complexOperation() {
+  using stack = new DisposableStack();
+
+  const file = stack.use(new FileHandle(openFileSync('config.json')));
+  const tempFile = stack.use(new FileHandle(openFileSync('temp.txt')));
+  const listener = stack.adopt(
+    document.getElementById('btn'),
+    (el) => el.removeEventListener('click', handler)
+  );
+
+  // 작업 수행...
+
+  // 스코프 종료 시 역순으로 모두 정리
+  // listener → tempFile → file 순서
+}
+```
+
+## 브라우저 지원 현황
+
+2025년 3월 기준:
+
+- **Chrome/Edge**: 134+ (플래그 없이 지원)
+- **Firefox**: 141+
+- **Safari**: 미지원
+- **TypeScript**: 5.2+에서 `using` 구문 지원
+- **Babel**: `@babel/plugin-proposal-explicit-resource-management`로 트랜스파일 가능
+
+Node.js에서는 v22부터 플래그 없이 사용할 수 있다.
+
+## C#, Python과의 비교
+
+`using`은 새로운 개념이 아니다. 다른 언어에서는 이미 오래전부터 존재한다.
+
+| 언어 | 문법 | 프로토콜 |
+|------|------|----------|
+| JavaScript | `using x = ...` | `Symbol.dispose` |
+| C# | `using var x = ...` | `IDisposable` |
+| Python | `with x as ...` | `__enter__` / `__exit__` |
+| Java | `try (var x = ...)` | `AutoCloseable` |
+
+JavaScript의 `using`은 C#에서 직접적인 영감을 받았다.
+
+## 정리
+
+- `using` 키워드는 **스코프 종료 시 자동으로 리소스를 정리**한다
+- `Symbol.dispose`(동기)와 `Symbol.asyncDispose`(비동기)로 정리 로직을 정의한다
+- `try/finally` 중첩 없이도 **안전한 리소스 관리**가 가능하다
+- `DisposableStack`으로 여러 리소스를 한 번에 관리할 수 있다
+- 이벤트 리스너, 타이머, 네트워크 요청 등 프론트엔드에서도 유용하다
+
+> 출처: [Mat Marquis — "The using keyword in JavaScript"](https://piccalil.li)
