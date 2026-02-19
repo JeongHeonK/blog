@@ -71,6 +71,21 @@ export default defineConfig({
 					autogenerate: { directory: 'state-management' },
 					collapsed: true,
 				},
+				{
+					label: '💡 프론트엔드 실무 팁',
+					autogenerate: { directory: 'tech-trend' },
+					collapsed: true,
+				},
+				{
+					label: '🤖 Claude 활용기',
+					autogenerate: { directory: 'claude' },
+					collapsed: true,
+				},
+				{
+					label: '📡 기술 트렌드',
+					autogenerate: { directory: 'tech-trends' },
+					collapsed: true,
+				},
 			],
 			head: [
 				{
