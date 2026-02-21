@@ -14,18 +14,21 @@ npm run preview    # 빌드 결과 미리보기
 
 ## Architecture
 
-Astro + Starlight 기반 정적 기술 블로그. GitHub Pages에 배포 (`main` 브랜치로 PR merge 시 자동).
+Astro + Starlight 기반 정적 기술 블로그. GitHub Pages에 배포 (`main` 브랜치 push 시 자동, `.github/workflows/deploy.yml`).
 
 - **base path**: `/blog` — 모든 내부 링크에 `/blog/` 접두사 필요
+- **Node**: 20 (CI 기준)
 - **locale**: 한국어 단일 로케일 (`root`)
-- **콘텐츠**: `src/content/docs/` 아래 MDX 파일, 디렉토리별 시리즈 분류
+- **콘텐츠**: `src/content/docs/` 아래 MDX 파일, 디렉토리별 시리즈 분류. 시리즈에 속하지 않는 단독 글도 존재 (예: `critical-rendering-path.mdx`)
 - **사이드바**: `astro.config.mjs`의 `sidebar`에서 `autogenerate`로 디렉토리 기반 자동 생성
 - **커스텀 컴포넌트**: `src/components/ThemeSelect.astro` (아이콘 토글 방식으로 Starlight 기본 테마 셀렉터 오버라이드)
-- **스타일**: `src/styles/custom.css`에서 Starlight CSS 변수 오버라이드 (색상, 폰트, 간격)
+- **코드 블록 테마**: `expressiveCode`로 github-dark / github-light 사용
+- **스타일**: `src/styles/custom.css`에서 Starlight CSS 변수 오버라이드 (색상, 폰트, 간격). 다크/라이트 모드 각각 별도 색상 스케일 정의
 - **폰트**: Pretendard(본문) + JetBrains Mono(코드)
 
 ## Content Conventions
 
 - 시리즈 글 파일명: `{순번}-{slug}.mdx` (예: `01-composition.mdx`)
-- 메인 페이지(`src/content/docs/index.mdx`)에서 `LinkCard` 컴포넌트로 각 시리즈 첫 글 링크
-- 새 시리즈 추가 시 `astro.config.mjs`의 `sidebar` 배열에도 항목 추가 필요
+- 메인 페이지(`src/content/docs/index.mdx`)에서 `LinkCard`/`CardGrid` 컴포넌트로 각 시리즈 첫 글 링크
+- 새 시리즈 추가 시: (1) `src/content/docs/{시리즈명}/` 디렉토리 생성 → (2) `astro.config.mjs`의 `sidebar` 배열에 항목 추가 → (3) `index.mdx`에 `LinkCard` 추가
+- MDX 내부 링크 형식: `/blog/{시리즈명}/{순번}-{slug}/` (trailing slash 포함)
